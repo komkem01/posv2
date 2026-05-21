@@ -204,32 +204,6 @@
         </button>
       </form>
 
-      <AppModal
-        ref="successModalRef"
-        :close-on-backdrop="false"
-        :show-accent="false"
-      >
-        <div class="text-center space-y-3">
-          <div class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 mx-auto">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-            </svg>
-          </div>
-          <h3 class="text-lg font-extrabold text-slate-800">ส่งคำขอเรียบร้อยแล้ว</h3>
-          <p class="text-sm text-slate-500 leading-relaxed">
-            ระบบได้รับคำขอของคุณแล้ว กรุณารอการตรวจสอบจากผู้ดูแลระบบ
-          </p>
-        </div>
-
-        <button
-          type="button"
-          class="mt-5 w-full inline-flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white py-2.5 text-sm font-bold transition-colors"
-          @click="handleSuccessAcknowledge"
-        >
-          ตกลง
-        </button>
-      </AppModal>
-
       <!-- <p class="text-xs text-slate-500 mt-5 text-center md:text-left">
         มีบัญชีอยู่แล้ว?
         <NuxtLink to="/login" class="text-blue-600 hover:text-blue-700 font-bold">เข้าสู่ระบบ</NuxtLink>
@@ -272,9 +246,6 @@ interface ApiListResponse<T> {
 
 const isSubmitting = ref(false);
 const isAddressLoading = ref(false);
-const successModalRef = ref<{ open: () => void; close: () => void } | null>(
-  null,
-);
 
 const provinces = ref<LocationItem[]>([]);
 const districts = ref<DistrictItem[]>([]);
@@ -452,11 +423,6 @@ const resetForm = () => {
   zipcodes.value = [];
 };
 
-const handleSuccessAcknowledge = async () => {
-  successModalRef.value?.close();
-  await navigateTo("/login");
-};
-
 const submitRequest = async () => {
   if (
     !form.value.provinceId ||
@@ -472,7 +438,7 @@ const submitRequest = async () => {
   try {
     const baseApi = runtimeConfig.public.baseApi || "http://localhost:8080";
     const addressNote = buildAddressNote();
-    const mergedNote = [form.value.note?.trim(), `ที่อยู่ร้าน: ${addressNote}`]
+    const mergedNote = [form.value.note?.trim(), `ที่อยู่ร้าน : ${addressNote}`]
       .filter(Boolean)
       .join("\n");
 
@@ -490,7 +456,6 @@ const submitRequest = async () => {
     });
     showToast("ส่งคำขอสมัครร้านค้าเรียบร้อยแล้ว", "success");
     resetForm();
-    successModalRef.value?.open();
   } catch (e: any) {
     showToast(e?.data?.message || "ส่งคำขอไม่สำเร็จ", "error");
   } finally {
