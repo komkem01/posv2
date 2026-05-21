@@ -194,51 +194,82 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useToast } from '~/composables/useToast'
 
 const { showToast } = useToast()
+const { get, post, patch, del } = useApi()
 
 // Page Configurations
 definePageMeta({
   layout: 'admin',
-  middleware: [
-    () => {
-      const authState = useState('auth') as any
-      if (!authState.value || !authState.value.isLoggedIn) {
-        return navigateTo('/login')
-      }
-    }
-  ]
+  middleware: ['auth']
 })
 
-// Products shared global state
 interface Product {
-  id: number
+  id: string
   name: string
-  price: number
-  category: string
-  stock: number
 }
-const products = useState<Product[]>('products')
 
-// Shared Add-ons global state
 interface Addon {
-  id: number
+  id: string
   name: string
   price: number
-  productId: number | null
+  productId: string | null
 }
-const addons = useState<Addon[]>('addons', () => [
-  { id: 1, name: 'เพิ่มไข่มุก (Pearl)', price: 10, productId: 2 },
-  { id: 2, name: 'เพิ่มช็อตกาแฟ (Extra Shot)', price: 15, productId: 3 },
-  { id: 3, name: 'วิปครีม (Whipped Cream)', price: 15, productId: null },
-  { id: 4, name: 'หวานน้อย (Less Sweet)', price: 0, productId: null }
-])
+
+interface ProductAddonLink {
+  id: string
+  addon_id: string
+  product_id: string
+}
+
+const products = ref<Product[]>([])
+const addons = ref<Addon[]>([])
+const addonLinks = ref<Record<string, ProductAddonLink[]>>({})
+const isLoading = ref(false)
+
+const loadData = async () => {
+  isLoading.value = true
+  try {
+    const [prodRes, addonRes, productAddonRes] = await Promise.all([
+      get<{ id: string; name: string }[]>('/api/v1/store/product', { size: 1000 }),
+      get<{ id: string; name: string; price: number; is_all_products: boolean; is_active: boolean }[]>('/api/v1/store/addon', { size: 1000 }),
+      get<ProductAddonLink[]>('/api/v1/store/product-addon', { size: 1000 }),
+    ])
+
+    products.value = (prodRes.data ?? []).map(p => ({ id: p.id, name: p.name }))
+
+    const linksByAddon: Record<string, ProductAddonLink[]> = {}
+    for (const link of productAddonRes.data ?? []) {
+      if (!linksByAddon[link.addon_id]) linksByAddon[link.addon_id] = []
+      linksByAddon[link.addon_id].push(link)
+    }
+    addonLinks.value = linksByAddon
+
+    addons.value = (addonRes.data ?? [])
+      .filter(a => a.is_active)
+      .map(a => {
+        const firstLink = linksByAddon[a.id]?.[0]
+        return {
+          id: a.id,
+          name: a.name,
+          price: a.price,
+          productId: a.is_all_products ? null : (firstLink?.product_id ?? null)
+        }
+      })
+  } catch (e: any) {
+    showToast(e?.data?.message || 'โหลดข้อมูลไม่สำเร็จ', 'error')
+  } finally {
+    isLoading.value = false
+  }
+}
+
+onMounted(loadData)
 
 // Edit/Form states
 const isEditingAddon = ref(false)
 const addonForm = ref({
-  id: null as number | null,
+  id: null as string | null,
   name: '',
   price: '' as string | number,
-  productId: null as number | null,
+  productId: null as string | null,
   error: ''
 })
 
@@ -253,27 +284,25 @@ const formatPrice = () => {
 
 // Custom Delete Confirmation Modal States
 const showConfirmDeleteModal = ref(false)
-const addonToDelete = ref<number | null>(null)
+const addonToDelete = ref<string | null>(null)
 
 // Custom dropdown logic for products
 const isProductDropdownOpen = ref(false)
 const toggleProductDropdown = () => {
   isProductDropdownOpen.value = !isProductDropdownOpen.value
 }
-const selectProduct = (pId: number | null) => {
+const selectProduct = (pId: string | null) => {
   addonForm.value.productId = pId
   isProductDropdownOpen.value = false
 }
 const selectedProductDisplay = computed(() => {
   if (addonForm.value.productId === null) return 'ทุกสินค้า (All Products)'
-  if (!products.value) return ''
   const p = products.value.find(p => p.id === addonForm.value.productId)
   return p ? p.name : 'กรุณาเลือกสินค้า...'
 })
 
-const getProductName = (pId: number | null) => {
+const getProductName = (pId: string | null) => {
   if (pId === null) return 'ทุกสินค้า'
-  if (!products.value) return '-'
   const p = products.value.find(p => p.id === pId)
   return p ? p.name : '-'
 }
@@ -304,7 +333,7 @@ const cancelAddonEdit = () => {
   addonForm.value = { id: null, name: '', price: null, productId: null, error: '' }
 }
 
-const saveAddon = () => {
+const saveAddon = async () => {
   const name = addonForm.value.name.trim()
   const rawPrice = addonForm.value.price
 
@@ -320,41 +349,85 @@ const saveAddon = () => {
     return
   }
 
-  if (isEditingAddon.value && addonForm.value.id !== null) {
-    const add = addons.value.find(a => a.id === addonForm.value.id)
-    if (add) {
-      add.name = name
-      add.price = price
-      add.productId = addonForm.value.productId
-      showToast('แก้ไขรายการเสริมสำเร็จ', 'success')
-    }
-  } else {
-    // Add new Addon to shared state
-    const newId = addons.value.length ? Math.max(...addons.value.map(a => a.id)) + 1 : 1
-    addons.value.push({
-      id: newId,
-      name,
-      price,
-      productId: addonForm.value.productId
-    })
-    showToast('เพิ่มรายการเสริมใหม่สำเร็จ', 'success')
-  }
+  try {
+    if (isEditingAddon.value && addonForm.value.id !== null) {
+      const addonId = addonForm.value.id
+      await patch(`/api/v1/store/addon/${addonId}`, {
+        name,
+        price,
+        is_all_products: addonForm.value.productId === null,
+        is_active: true
+      })
 
-  cancelAddonEdit()
+      const links = addonLinks.value[addonId] ?? []
+      if (addonForm.value.productId === null) {
+        for (const link of links) {
+          await del(`/api/v1/store/product-addon/${link.id}`)
+        }
+      } else {
+        const matched = links.find(l => l.product_id === addonForm.value.productId)
+        if (!matched) {
+          for (const link of links) {
+            await del(`/api/v1/store/product-addon/${link.id}`)
+          }
+          await post('/api/v1/store/product-addon', {
+            addon_id: addonId,
+            product_id: addonForm.value.productId
+          })
+        } else {
+          for (const link of links) {
+            if (link.id !== matched.id) {
+              await del(`/api/v1/store/product-addon/${link.id}`)
+            }
+          }
+        }
+      }
+
+      showToast('แก้ไขรายการเสริมสำเร็จ', 'success')
+    } else {
+      const created = await post<{ id: string }>('/api/v1/store/addon', {
+        name,
+        price,
+        is_all_products: addonForm.value.productId === null,
+        is_active: true
+      })
+
+      if (addonForm.value.productId !== null && created.data?.id) {
+        await post('/api/v1/store/product-addon', {
+          addon_id: created.data.id,
+          product_id: addonForm.value.productId
+        })
+      }
+
+      showToast('เพิ่มรายการเสริมใหม่สำเร็จ', 'success')
+    }
+
+    await loadData()
+    cancelAddonEdit()
+  } catch (e: any) {
+    showToast(e?.data?.message || 'บันทึกไม่สำเร็จ', 'error')
+  }
 }
 
-const confirmDelete = (id: number) => {
+const confirmDelete = (id: string) => {
   addonToDelete.value = id
   showConfirmDeleteModal.value = true
 }
 
-const executeDelete = () => {
+const executeDelete = async () => {
   if (addonToDelete.value !== null) {
     const id = addonToDelete.value
     const add = addons.value.find(a => a.id === id)
-    if (add) {
-      addons.value = addons.value.filter(a => a.id !== id)
-      showToast(`ลบรายการเสริม "${add.name}" สำเร็จ`, 'success')
+    try {
+      const links = addonLinks.value[id] ?? []
+      for (const link of links) {
+        await del(`/api/v1/store/product-addon/${link.id}`)
+      }
+      await del(`/api/v1/store/addon/${id}`)
+      showToast(`ลบรายการเสริม "${add?.name ?? ''}" สำเร็จ`, 'success')
+      await loadData()
+    } catch (e: any) {
+      showToast(e?.data?.message || 'ลบไม่สำเร็จ', 'error')
     }
     showConfirmDeleteModal.value = false
     addonToDelete.value = null

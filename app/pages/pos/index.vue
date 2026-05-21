@@ -211,7 +211,7 @@
               </h4>
               <p class="text-[10px] text-slate-400 font-semibold whitespace-nowrap mt-0.5">
                 ฿{{
-                  (item.product.price + (item.selectedAddons ? item.selectedAddons.reduce((sum, a) => sum + a.price, 0) : 0)).toLocaleString(undefined, {
+                  (item.product.price + getAddonsTotal(item.selectedAddons)).toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                   })
                 }}
@@ -254,7 +254,7 @@
               <div class="text-right">
                 <p class="text-xs font-extrabold text-slate-800">
                   ฿{{
-                    ((item.product.price + (item.selectedAddons ? item.selectedAddons.reduce((sum, a) => sum + a.price, 0) : 0)) * item.quantity).toLocaleString(
+                    (getCartLineTotal(item)).toLocaleString(
                       undefined,
                       { minimumFractionDigits: 2 },
                     )
@@ -475,7 +475,7 @@
             <div v-for="item in receiptData?.items" :key="item.product.id" class="text-[11px]">
               <div class="flex justify-between items-start font-bold">
                 <span class="pr-2">{{ item.quantity }}x {{ item.product.name }}</span>
-                <span>{{ ((item.product.price + (item.selectedAddons ? item.selectedAddons.reduce((sum, a) => sum + a.price, 0) : 0)) * item.quantity).toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</span>
+                <span>{{ getCartLineTotal(item).toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</span>
               </div>
               <!-- Addons -->
               <div v-if="item.selectedAddons && item.selectedAddons.length > 0" class="pl-4 text-slate-500 print:text-black mt-0.5">
@@ -589,7 +589,7 @@
             @click="confirmAddonSelection"
             class="flex-grow inline-flex items-center justify-center px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98] transform"
           >
-            เพิ่มลงตะกร้า (฿{{ ((activeProduct?.price || 0) + tempSelectedAddons.reduce((sum, a) => sum + a.price, 0)).toLocaleString() }})
+            เพิ่มลงตะกร้า (฿{{ ((activeProduct?.price || 0) + getAddonsTotal(tempSelectedAddons)).toLocaleString() }})
           </button>
           <button
             @click="showAddonModal = false"
@@ -604,31 +604,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useToast } from "~/composables/useToast"
 
 const { showToast } = useToast()
+const { get, patch, post } = useApi()
+const { auth } = useAuth()
 
-// Access the global shared authentication state
-const auth = useState("auth", () => ({
-  isLoggedIn: false,
-  user: null as any,
-}));
-
-// Route guard middleware to enforce login
 definePageMeta({
-  middleware: [
-    () => {
-      const authState = useState("auth") as any;
-      if (!authState.value.isLoggedIn) {
-        return navigateTo("/login");
-      }
-    },
-  ],
+  middleware: ["auth"],
 });
 
 interface Product {
-  id: number;
+  id: string;
   name: string;
   price: number;
   category: string;
@@ -636,10 +624,10 @@ interface Product {
 }
 
 interface Addon {
-  id: number;
+  id: string;
   name: string;
   price: number;
-  productId: number | null;
+  productId: string | null;
 }
 
 interface CartItem {
@@ -648,8 +636,12 @@ interface CartItem {
   selectedAddons?: Addon[];
 }
 
-// Categories list
-const categories = ["ทั้งหมด", "เครื่องดื่ม", "อาหาร", "ของหวาน", "ของทานเล่น"];
+// Stock records for updating after checkout
+const stockRecords = ref(new Map<string, { id: string; branchId: string }>())
+
+// Categories list loaded from API
+const rawCategoryNames = ref<string[]>([])
+const categories = computed(() => ["ทั้งหมด", ...rawCategoryNames.value])
 const selectedCategory = ref("ทั้งหมด");
 const searchQuery = ref("");
 
@@ -662,87 +654,67 @@ const displayReceivedAmount = ref<string>('');
 const showReceiptModal = ref(false);
 const receiptData = ref<any>(null);
 
-// Products shared global state
-const products = useState<Product[]>('products', () => [
-  {
-    id: 1,
-    name: "เอสเพรสโซ่ร้อน (Hot Espresso)",
-    price: 65,
-    category: "เครื่องดื่ม",
-    stock: 45,
-  },
-  {
-    id: 2,
-    name: "มัทฉะลาเต้เย็น (Iced Matcha Latte)",
-    price: 95,
-    category: "เครื่องดื่ม",
-    stock: 3,
-  },
-  {
-    id: 3,
-    name: "อเมริกาโน่พรีเมียม (Premium Americano)",
-    price: 75,
-    category: "เครื่องดื่ม",
-    stock: 50,
-  },
-  {
-    id: 4,
-    name: "ครัวซองต์คลาสสิก (Classic Croissant)",
-    price: 85,
-    category: "ของหวาน",
-    stock: 12,
-  },
-  {
-    id: 5,
-    name: "ขนมปังหน้าอโวคาโดและไข่ (Avocado Toast with Egg)",
-    price: 185,
-    category: "อาหาร",
-    stock: 8,
-  },
-  {
-    id: 6,
-    name: "ทรัฟเฟิลฟรายส์พร้อมมายองเนส (Truffle Fries)",
-    price: 120,
-    category: "ของทานเล่น",
-    stock: 25,
-  },
-  {
-    id: 7,
-    name: "เค้กช็อกโกแลตฟัดจ์ (Chocolate Fudge Cake)",
-    price: 110,
-    category: "ของหวาน",
-    stock: 6,
-  },
-  {
-    id: 8,
-    name: "คลับแซนด์วิช (Club Sandwich)",
-    price: 155,
-    category: "อาหาร",
-    stock: 15,
-  },
-  {
-    id: 9,
-    name: "สมูทตี้เบอร์รี่สด (Fresh Berry Smoothie)",
-    price: 105,
-    category: "เครื่องดื่ม",
-    stock: 20,
-  },
-  {
-    id: 10,
-    name: "ขนมปังกระเทียมอบชีส (Cheesy Garlic Bread)",
-    price: 90,
-    category: "ของทานเล่น",
-    stock: 18,
-  },
-]);
+// Products loaded from API
+const products = ref<Product[]>([])
 
-// Shared Add-ons global state
-const addons = useState<Addon[]>('addons', () => [
-  { id: 1, name: 'เพิ่มไข่มุก (Pearl)', price: 10, productId: 2 },
-  { id: 2, name: 'เพิ่มช็อตกาแฟ (Extra Shot)', price: 15, productId: 3 },
-  { id: 3, name: 'วิปครีม (Whipped Cream)', price: 15, productId: null },
-  { id: 4, name: 'หวานน้อย (Less Sweet)', price: 0, productId: null }
-]);
+// Addons loaded from API
+const addons = ref<Addon[]>([])
+
+onMounted(async () => {
+  try {
+    const [catRes, prodRes, stockRes, addonRes, paRes] = await Promise.all([
+      get<{ id: string; name: string }[]>('/api/v1/store/category', { size: 1000 }),
+      get<{ id: string; name: string; price: number; category_name: string | null }[]>('/api/v1/store/product', { size: 1000 }),
+      get<{ id: string; product_id: string; branch_id: string; stock: number }[]>('/api/v1/store/product-stock', { size: 1000 }),
+      get<{ id: string; name: string; price: number; is_all_products: boolean; is_active: boolean }[]>('/api/v1/store/addon', { size: 1000 }),
+      get<{ addon_id: string; product_id: string }[]>('/api/v1/store/product-addon', { size: 1000 }),
+    ])
+
+    rawCategoryNames.value = (catRes.data ?? []).map(c => c.name)
+
+    const stockMap = new Map<string, number>()
+    const stockRecMap = new Map<string, { id: string; branchId: string }>()
+    for (const s of stockRes.data ?? []) {
+      if (!stockMap.has(s.product_id)) {
+        stockMap.set(s.product_id, s.stock)
+        stockRecMap.set(s.product_id, { id: s.id, branchId: s.branch_id })
+      }
+    }
+    stockRecords.value = stockRecMap
+
+    products.value = (prodRes.data ?? []).map(p => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      category: p.category_name ?? '',
+      stock: stockMap.get(p.id) ?? 0,
+    }))
+
+    // Build product-addon mapping: addonId → set of productIds
+    const paMap = new Map<string, Set<string>>()
+    for (const pa of paRes.data ?? []) {
+      if (!paMap.has(pa.addon_id)) paMap.set(pa.addon_id, new Set())
+      paMap.get(pa.addon_id)!.add(pa.product_id)
+    }
+
+    const loadedAddons: Addon[] = []
+    for (const a of addonRes.data ?? []) {
+      if (!a.is_active) continue
+      if (a.is_all_products) {
+        loadedAddons.push({ id: a.id, name: a.name, price: a.price, productId: null })
+        continue
+      }
+      const pIds = paMap.get(a.id)
+      if (!pIds || pIds.size === 0) continue
+      for (const pid of pIds) {
+        loadedAddons.push({ id: `${a.id}_${pid}`, name: a.name, price: a.price, productId: pid })
+      }
+    }
+    addons.value = loadedAddons
+  } catch {
+    showToast('โหลดข้อมูลไม่สำเร็จ กรุณารีเฟรชหน้า', 'error')
+  }
+})
 
 // Addon Modal States
 const showAddonModal = ref(false);
@@ -750,7 +722,7 @@ const activeProduct = ref<Product | null>(null);
 const tempSelectedAddons = ref<Addon[]>([]);
 
 const availableAddonsForActiveProduct = computed(() => {
-  if (!activeProduct.value || !addons.value) return [];
+  if (!activeProduct.value) return [];
   return addons.value.filter(
     (addon) => addon.productId === null || addon.productId === activeProduct.value!.id
   );
@@ -810,11 +782,20 @@ const filteredProducts = computed(() => {
   });
 });
 
+const getAddonsTotal = (selectedAddons?: Addon[]) => {
+  if (!selectedAddons || selectedAddons.length === 0) return 0
+  return selectedAddons.reduce((sum, addon) => sum + addon.price, 0)
+}
+
+const getCartLineTotal = (item: CartItem) => {
+  return (item.product.price + getAddonsTotal(item.selectedAddons)) * item.quantity
+}
+
 // Real-time calculations
 const subtotal = computed(() => {
   return cart.value.reduce(
     (acc, item) => {
-      const addonsPrice = item.selectedAddons ? item.selectedAddons.reduce((sum, a) => sum + a.price, 0) : 0;
+      const addonsPrice = getAddonsTotal(item.selectedAddons)
       return acc + (item.product.price + addonsPrice) * item.quantity;
     },
     0,
@@ -931,7 +912,7 @@ const setQuickAmount = (amt: number) => {
 };
 
 // Confirm payment and generate receipt
-const confirmPayment = () => {
+const confirmPayment = async () => {
   if (paymentMethod.value === 'cash' && !isCashPaymentValid.value) return;
 
   const finalReceived = paymentMethod.value === 'cash' ? (parseFloat(receivedAmount.value) || total.value) : total.value;
@@ -949,13 +930,43 @@ const confirmPayment = () => {
     changeAmount: paymentMethod.value === 'cash' ? finalReceived - total.value : 0,
   };
 
-  // Deduct stocks in mock data
-  cart.value.forEach((item) => {
-    const prod = products.value.find((p) => p.id === item.product.id);
-    if (prod) {
-      prod.stock = Math.max(0, prod.stock - item.quantity);
+  try {
+    // Deduct stock from backend and keep local list in sync
+    for (const item of cart.value) {
+      const prod = products.value.find((p) => p.id === item.product.id);
+      if (!prod) continue;
+
+      const newStock = Math.max(0, prod.stock - item.quantity);
+      const stockRecord = stockRecords.value.get(prod.id);
+
+      if (stockRecord) {
+        await patch(`/api/v1/store/product-stock/${stockRecord.id}`, {
+          product_id: prod.id,
+          branch_id: stockRecord.branchId,
+          stock: newStock,
+        });
+      } else {
+        const branchId = auth.value.user?.branchId;
+        if (!branchId) {
+          showToast('ไม่พบข้อมูลสาขา ไม่สามารถตัดสต็อกได้', 'error')
+          return
+        }
+        const created = await post<{ id: string; branch_id: string }>('/api/v1/store/product-stock', {
+          product_id: prod.id,
+          branch_id: branchId,
+          stock: newStock,
+        });
+        if (created.data) {
+          stockRecords.value.set(prod.id, { id: created.data.id, branchId: created.data.branch_id || branchId });
+        }
+      }
+
+      prod.stock = newStock;
     }
-  });
+  } catch (e: any) {
+    showToast(e?.data?.message || 'ตัดสต็อกไม่สำเร็จ', 'error')
+    return
+  }
 
   showToast("ชำระเงินสำเร็จ เตรียมพิมพ์ใบเสร็จ", "success")
   

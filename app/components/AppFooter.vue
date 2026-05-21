@@ -8,6 +8,7 @@
         <template v-if="auth.isLoggedIn">
           <NuxtLink to="/pos" class="hover:text-blue-600 transition-colors">ขายหน้าบ้าน (POS)</NuxtLink>
           <NuxtLink to="/admin" class="hover:text-blue-600 transition-colors">จัดการหลังบ้าน</NuxtLink>
+          <NuxtLink to="/logout" class="hover:text-rose-600 transition-colors">ออกจากระบบ (Logout)</NuxtLink>
         </template>
         <template v-else>
           <NuxtLink to="/login" class="hover:text-blue-600 transition-colors">เข้าสู่ระบบ (Sign In)</NuxtLink>
@@ -20,11 +21,7 @@
 </template>
 
 <script setup lang="ts">
-// Access the global shared authentication state
-const auth = useState('auth', () => ({
-  isLoggedIn: false,
-  user: null as any
-}))
+const { auth } = useAuth()
 </script>
 
 

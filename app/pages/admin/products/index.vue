@@ -49,15 +49,15 @@
               </td>
               <td class="py-3 whitespace-nowrap">
                 <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-550 border border-slate-200/30 inline-block">
-                  {{ prod.category }}
+                  {{ prod.categoryName }}
                 </span>
               </td>
               <td class="py-3 text-right font-mono font-bold text-slate-700 text-sm whitespace-nowrap">
                 ฿{{ prod.price.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}
               </td>
               <td class="py-3 text-center font-bold text-sm whitespace-nowrap">
-                <span :class="prod.stock < 5 ? 'text-rose-600 bg-rose-50 border border-rose-100/50 px-2.5 py-0.5 rounded-lg' : 'text-slate-600'">
-                  {{ prod.stock }}
+                <span :class="(prod.stock ?? 0) < 5 ? 'text-rose-600 bg-rose-50 border border-rose-100/50 px-2.5 py-0.5 rounded-lg' : 'text-slate-600'">
+                  {{ prod.stock ?? '-' }}
                 </span>
               </td>
               <td class="py-3 text-center space-x-2 whitespace-nowrap">
@@ -106,9 +106,9 @@
             <div 
               @click="toggleCategoryDropdown"
               class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-blue-500 font-bold cursor-pointer flex justify-between items-center transition-colors hover:bg-slate-100"
-              :class="productForm.category ? 'text-slate-800' : 'text-slate-400'"
+              :class="productForm.categoryId ? 'text-slate-800' : 'text-slate-400'"
             >
-              <span>{{ productForm.category || 'เลือกหมวดหมู่สินค้า...' }}</span>
+              <span>{{ productForm.categoryName || 'เลือกหมวดหมู่สินค้า...' }}</span>
               <svg class="w-4 h-4 text-slate-400 transition-transform duration-200" :class="{ 'rotate-180': isCategoryDropdownOpen }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
               </svg>
@@ -117,14 +117,14 @@
             <Transition name="fade">
               <div v-if="isCategoryDropdownOpen" class="absolute left-0 right-0 mt-2 bg-white border border-slate-100 rounded-xl shadow-lg shadow-slate-200/50 py-1.5 z-30">
                 <div 
-                  v-for="cat in rawCategories" 
-                  :key="cat"
-                  @click="selectCategory(cat)"
+                  v-for="cat in categories" 
+                  :key="cat.id"
+                  @click="selectCategory(cat.id, cat.name)"
                   class="px-4 py-2.5 text-xs font-bold hover:bg-blue-50 hover:text-blue-600 cursor-pointer transition-colors flex items-center justify-between"
-                  :class="productForm.category === cat ? 'bg-blue-50/50 text-blue-600' : 'text-slate-600'"
+                  :class="productForm.categoryId === cat.id ? 'bg-blue-50/50 text-blue-600' : 'text-slate-600'"
                 >
-                  {{ cat }}
-                  <svg v-if="productForm.category === cat" class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                  {{ cat.name }}
+                  <svg v-if="productForm.categoryId === cat.id" class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                 </div>
               </div>
             </Transition>
@@ -142,11 +142,11 @@
               />
             </div>
             <div>
-              <label class="block text-xs font-bold text-slate-500 mb-1">จำนวนตั้งต้น</label>
+              <label class="block text-xs font-bold text-slate-500 mb-1">ราคาต้นทุน (บาท)</label>
               <input
-                v-model="productForm.stock"
+                v-model="productForm.costPrice"
                 type="text"
-                placeholder="เช่น 50"
+                placeholder="เช่น 60.00"
                 class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-semibold"
               />
             </div>
@@ -187,7 +187,7 @@
         </div>
         <div class="space-y-1.5">
           <h3 class="text-sm font-extrabold text-slate-800">ยืนยันการลบสินค้า</h3>
-          <p class="text-[11px] font-bold text-slate-500 leading-normal">คุณต้องการลบสินค้า "{{ products.find(p => p.id === productToDelete)?.name }}" ออกจากระบบใช่หรือไม่? การกระทำนี้ไม่สามารถกู้คืนได้</p>
+          <p class="text-[11px] font-bold text-slate-500 leading-normal">คุณต้องการลบสินค้า "{{ deleteProductName }}" ออกจากระบบใช่หรือไม่? การกระทำนี้ไม่สามารถกู้คืนได้</p>
         </div>
         <div class="flex gap-2.5 pt-1">
           <button @click="executeDelete" class="flex-grow inline-flex items-center justify-center px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98] transform">
@@ -207,76 +207,115 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useToast } from '~/composables/useToast'
 
 const { showToast } = useToast()
+const { get, post, patch, del } = useApi()
 
 // Page Configurations
 definePageMeta({
   layout: 'admin',
-  middleware: [
-    () => {
-      const authState = useState('auth') as any
-      if (!authState.value || !authState.value.isLoggedIn) {
-        return navigateTo('/login')
-      }
-    }
-  ]
+  middleware: ['auth']
 })
 
-// Categories shared global state
-const rawCategories = useState<string[]>('categories', () => ['เครื่องดื่ม', 'อาหาร', 'ของหวาน', 'ของทานเล่น'])
+// Categories and products from API
+interface Category {
+  id: string
+  name: string
+}
 
-// Products shared global state
 interface Product {
-  id: number
+  id: string
   name: string
   price: number
-  category: string
-  stock: number
+  costPrice: number
+  categoryId: string
+  categoryName: string
+  barcode: string
+  sku: string
+  isActive: boolean
+  stock?: number
 }
-const products = useState<Product[]>('products', () => [
-  { id: 1, name: 'เอสเพรสโซ่ร้อน (Hot Espresso)', price: 65, category: 'เครื่องดื่ม', stock: 45 },
-  { id: 2, name: 'มัทฉะลาเต้เย็น (Iced Matcha Latte)', price: 95, category: 'เครื่องดื่ม', stock: 3 },
-  { id: 3, name: 'อเมริกาโน่พรีเมียม (Premium Americano)', price: 75, category: 'เครื่องดื่ม', stock: 50 },
-  { id: 4, name: 'ครัวซองต์คลาสสิก (Classic Croissant)', price: 85, category: 'ของหวาน', stock: 12 },
-  { id: 5, name: 'ขนมปังหน้าอโวคาโดและไข่ (Avocado Toast with Egg)', price: 185, category: 'อาหาร', stock: 8 },
-  { id: 6, name: 'ทรัฟเฟิลฟรายส์พร้อมมายองเนส (Truffle Fries)', price: 120, category: 'ของทานเล่น', stock: 25 },
-  { id: 7, name: 'เค้กช็อกโกแลตฟัดจ์ (Chocolate Fudge Cake)', price: 110, category: 'ของหวาน', stock: 6 },
-  { id: 8, name: 'คลับแซนด์วิช (Club Sandwich)', price: 155, category: 'อาหาร', stock: 15 },
-  { id: 9, name: 'สมูทตี้เบอร์รี่สด (Fresh Berry Smoothie)', price: 105, category: 'เครื่องดื่ม', stock: 20 },
-  { id: 10, name: 'ขนมปังกระเทียมอบชีส (Cheesy Garlic Bread)', price: 90, category: 'ของทานเล่น', stock: 18 }
-])
+
+const categories = ref<Category[]>([])
+const products = ref<Product[]>([])
+const isLoading = ref(false)
+
+const loadCategories = async () => {
+  try {
+    const res = await get<{ id: string; name: string }[]>('/api/v1/store/category', { size: 1000 })
+    categories.value = (res.data ?? []).map(c => ({ id: c.id, name: c.name }))
+  } catch {
+    showToast('โหลดหมวดหมู่ไม่สำเร็จ', 'error')
+  }
+}
+
+const loadProducts = async () => {
+  isLoading.value = true
+  try {
+    const [prodRes, stockRes] = await Promise.all([
+      get<{ id: string; name: string; price: number; cost_price: number; category_id: string; category_name: string | null; barcode: string; sku: string; is_active: boolean }[]>('/api/v1/store/product', { size: 1000 }),
+      get<{ product_id: string; stock: number }[]>('/api/v1/store/product-stock', { size: 1000 })
+    ])
+    const stockMap = new Map<string, number>()
+    for (const s of stockRes.data ?? []) {
+      stockMap.set(s.product_id, (stockMap.get(s.product_id) ?? 0) + s.stock)
+    }
+    products.value = (prodRes.data ?? []).map(p => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      costPrice: p.cost_price,
+      categoryId: p.category_id,
+      categoryName: p.category_name ?? '',
+      barcode: p.barcode,
+      sku: p.sku,
+      isActive: p.is_active,
+      stock: stockMap.get(p.id)
+    }))
+  } catch {
+    showToast('โหลดสินค้าไม่สำเร็จ', 'error')
+  } finally {
+    isLoading.value = false
+  }
+}
+
+onMounted(async () => {
+  await loadCategories()
+  await loadProducts()
+})
 
 // Search & Form states
 const productSearch = ref('')
 const isEditingProduct = ref(false)
 const productForm = ref({
-  id: null as number | null,
+  id: null as string | null,
   name: '',
-  category: '',
+  categoryId: '',
+  categoryName: '',
   price: '' as string | number,
-  stock: '' as string | number,
-  error: ''
+  costPrice: '' as string | number,
 })
 
 const formatPrice = () => {
-  if (productForm.value.price !== '' && productForm.value.price !== null) {
+  if (productForm.value.price !== '') {
     const parsed = parseFloat(String(productForm.value.price).replace(/,/g, ''))
-    if (!isNaN(parsed)) {
-      productForm.value.price = parsed.toFixed(2)
-    }
+    if (!isNaN(parsed)) productForm.value.price = parsed.toFixed(2)
   }
 }
 
 // Custom Delete Confirmation Modal States
 const showConfirmDeleteModal = ref(false)
-const productToDelete = ref<number | null>(null)
+const productToDelete = ref<string | null>(null)
+const deleteProductName = ref('')
+const isSaving = ref(false)
+const isDeleting = ref(false)
 
 // Custom dropdown logic
 const isCategoryDropdownOpen = ref(false)
 const toggleCategoryDropdown = () => {
   isCategoryDropdownOpen.value = !isCategoryDropdownOpen.value
 }
-const selectCategory = (cat: string) => {
-  productForm.value.category = cat
+const selectCategory = (id: string, name: string) => {
+  productForm.value.categoryId = id
+  productForm.value.categoryName = name
   isCategoryDropdownOpen.value = false
 }
 
@@ -292,8 +331,8 @@ onUnmounted(() => document.removeEventListener('click', closeDropdown))
 // Search computation logic
 const filteredProducts = computed(() => {
   return products.value.filter(p => {
-    return p.name.toLowerCase().includes(productSearch.value.toLowerCase()) || 
-           p.category.toLowerCase().includes(productSearch.value.toLowerCase())
+    return p.name.toLowerCase().includes(productSearch.value.toLowerCase()) ||
+           p.categoryName.toLowerCase().includes(productSearch.value.toLowerCase())
   })
 })
 
@@ -302,79 +341,96 @@ const startEditProduct = (prod: Product) => {
   productForm.value = {
     id: prod.id,
     name: prod.name,
-    category: prod.category,
+    categoryId: prod.categoryId,
+    categoryName: prod.categoryName,
     price: prod.price,
-    stock: prod.stock,
-    error: ''
+    costPrice: prod.costPrice,
   }
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 const cancelProductEdit = () => {
   isEditingProduct.value = false
-  productForm.value = { id: null, name: '', category: '', price: null, stock: null, error: '' }
+  productForm.value = { id: null, name: '', categoryId: '', categoryName: '', price: '', costPrice: '' }
 }
 
-const saveProduct = () => {
+const saveProduct = async () => {
   const name = productForm.value.name.trim()
-  const cat = productForm.value.category
+  const categoryId = productForm.value.categoryId
   const rawPrice = productForm.value.price
-  const rawStock = productForm.value.stock
+  const rawCostPrice = productForm.value.costPrice
 
-  if (!name || !cat || rawPrice === '' || rawStock === '' || rawPrice === null || rawStock === null) {
+  if (!name || !categoryId || rawPrice === '' || rawCostPrice === '') {
     showToast('กรุณากรอกข้อมูลให้ครบถ้วนทุกช่อง', 'error')
     return
   }
 
   const price = parseFloat(String(rawPrice).replace(/,/g, ''))
-  const stock = parseInt(String(rawStock).replace(/,/g, ''), 10)
+  const costPrice = parseFloat(String(rawCostPrice).replace(/,/g, ''))
 
-  if (isNaN(price) || isNaN(stock) || price < 0 || stock < 0) {
-    showToast('ราคาและจำนวนสินค้าต้องเป็นตัวเลขบวกเท่านั้น', 'error')
+  if (isNaN(price) || isNaN(costPrice) || price < 0 || costPrice < 0) {
+    showToast('ราคาต้องเป็นตัวเลขบวกเท่านั้น', 'error')
     return
   }
 
-  if (isEditingProduct.value && productForm.value.id !== null) {
-    const prod = products.value.find(p => p.id === productForm.value.id)
-    if (prod) {
-      prod.name = name
-      prod.category = cat
-      prod.price = price
-      prod.stock = stock
+  isSaving.value = true
+  try {
+    if (isEditingProduct.value && productForm.value.id) {
+      const current = products.value.find(p => p.id === productForm.value.id)
+      await patch(`/api/v1/store/product/${productForm.value.id}`, {
+        category_id: categoryId,
+        barcode: current?.barcode || `BAR-${Date.now()}`,
+        sku: current?.sku || `SKU-${Date.now()}`,
+        name,
+        price,
+        cost_price: costPrice,
+        is_active: true
+      })
       showToast('บันทึกการแก้ไขสินค้าสำเร็จ', 'success')
+    } else {
+      const ts = Date.now()
+      await post('/api/v1/store/product', {
+        category_id: categoryId,
+        barcode: `BAR-${ts}`,
+        sku: `SKU-${ts}`,
+        name,
+        price,
+        cost_price: costPrice,
+        is_active: true
+      })
+      showToast('เพิ่มสินค้าใหม่สำเร็จ', 'success')
     }
-  } else {
-    // Add Product to global shared state
-    const newId = products.value.length ? Math.max(...products.value.map(p => p.id)) + 1 : 1
-    products.value.push({
-      id: newId,
-      name,
-      category: cat,
-      price,
-      stock
-    })
-    showToast('เพิ่มสินค้าใหม่สำเร็จ', 'success')
+    await loadProducts()
+    cancelProductEdit()
+  } catch (e: any) {
+    showToast(e?.data?.message || 'บันทึกไม่สำเร็จ', 'error')
+  } finally {
+    isSaving.value = false
   }
-
-  cancelProductEdit()
 }
 
-const confirmDelete = (id: number) => {
+const confirmDelete = (id: string) => {
+  const prod = products.value.find(p => p.id === id)
+  deleteProductName.value = prod?.name ?? ''
   productToDelete.value = id
   showConfirmDeleteModal.value = true
 }
 
-const executeDelete = () => {
-  if (productToDelete.value !== null) {
-    const id = productToDelete.value
-    const prod = products.value.find(p => p.id === id)
-    if (prod) {
-      products.value = products.value.filter(p => p.id !== id)
-      showToast(`ลบสินค้า "${prod.name}" สำเร็จ`, 'success')
-    }
+const executeDelete = async () => {
+  if (!productToDelete.value) return
+  isDeleting.value = true
+  try {
+    await del(`/api/v1/store/product/${productToDelete.value}`)
+    showToast(`ลบสินค้า "${deleteProductName.value}" สำเร็จ`, 'success')
     showConfirmDeleteModal.value = false
     productToDelete.value = null
+    deleteProductName.value = ''
     cancelProductEdit()
+    await loadProducts()
+  } catch (e: any) {
+    showToast(e?.data?.message || 'ลบไม่สำเร็จ', 'error')
+  } finally {
+    isDeleting.value = false
   }
 }
 </script>

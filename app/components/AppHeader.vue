@@ -50,7 +50,7 @@
         
         <!-- Displayed ONLY if NOT logged in -->
         <template v-else>
-          <NuxtLink to="/login" class="text-sm font-semibold text-slate-655 hover:text-blue-600 transition-colors duration-200">
+          <NuxtLink to="/login" class="text-sm font-semibold text-slate-655 hover:text-blue-600 transition-colors duration-200 border border-slate-200/80 px-3 py-1.5 rounded-lg shadow-sm hover:shadow-md hover:border-blue-300">
             เข้าสู่ระบบ
           </NuxtLink>
         </template>

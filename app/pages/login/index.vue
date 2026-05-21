@@ -127,48 +127,135 @@
             <span v-else>เข้าสู่ระบบ (Sign In)</span>
           </button>
         </div>
+
+        <div class="relative py-1">
+          <div class="absolute inset-0 flex items-center" aria-hidden="true">
+            <div class="w-full border-t border-slate-200"></div>
+          </div>
+          <div class="relative flex justify-center">
+            <span class="bg-white px-3 text-[11px] font-semibold text-slate-400">หรือ</span>
+          </div>
+        </div>
+
+        <div class="pt-1">
+          <NuxtLink
+            to="/register"
+            class="w-full inline-flex items-center justify-center px-6 py-3 border border-slate-200 text-sm font-bold rounded-2xl text-slate-700 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 transition-all duration-200 transform active:scale-[0.98]"
+          >
+            ลงทะเบียนร้านค้า
+          </NuxtLink>
+        </div>
       </form>
 
       <!-- Demo Account Prompt -->
-      <div class="text-xs text-slate-500 bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col gap-1 items-center">
+      <!-- <div class="text-xs text-slate-500 bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col gap-1 items-center">
         <p class="font-bold mb-1 text-slate-700">ข้อมูลสำหรับทดสอบเข้าสู่ระบบ</p>
-        <div><strong>อีเมล:</strong> admin@easypos.com</div>
+        <div><strong>อีเมล:</strong> </div>
         <div><strong>รหัสผ่าน:</strong> password</div>
-      </div>
+      </div> -->
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 
 // Disable the default layout to hide the header and footer on this page
 definePageMeta({
   layout: false,
 });
 
-const email = ref("admin@easypos.com");
-const password = ref("password");
+const email = ref("");
+const password = ref("");
 
 const { isLoading, showLoading, hideLoading } = useLoading();
+const { showToast } = useToast();
+const runtimeConfig = useRuntimeConfig();
+const route = useRoute();
+const { setSession, clearSession } = useAuth();
 
-// Use global shared Nuxt state for simulated authentication status
-const auth = useState("auth", () => ({
-  isLoggedIn: false,
-  user: null as any,
-}));
+interface LoginUserApi {
+  id: string;
+  branch_id?: string | null;
+  branch_name?: string | null;
+  role: string;
+  username: string;
+  firstname: string;
+  lastname: string;
+  email?: string | null;
+  phone?: string | null;
+  is_active: boolean;
+  must_change_password: boolean;
+}
+
+interface ApiResponse<T> {
+  code: string;
+  message: string;
+  data: T;
+}
+
+interface LoginPayload {
+  access_token: string;
+  token_type: string;
+  expires_at: string;
+  expires_in: number;
+  user: LoginUserApi;
+}
+
+onMounted(() => {
+  if (route.query.reason === "expired") {
+    showToast("เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่", "warning");
+  }
+});
 
 const handleLogin = async () => {
   showLoading();
 
-  // Simulate network request delay
-  setTimeout(() => {
-    hideLoading();
-    auth.value.isLoggedIn = true;
-    auth.value.user = { email: email.value, role: "admin" };
+  try {
+    const baseApi = runtimeConfig.public.baseApi || "http://localhost:8080";
+    const res = await $fetch<ApiResponse<LoginPayload>>(
+      `${baseApi}/api/v1/store/staff/login`,
+      {
+        method: "POST",
+        body: {
+          email: email.value,
+          password: password.value,
+        },
+      },
+    );
 
-    // Redirect to EasyPOS terminal
-    navigateTo("/pos");
-  }, 1000);
+    setSession({
+      accessToken: res.data.access_token,
+      expiresAt: res.data.expires_at,
+      user: {
+        id: res.data.user.id,
+        branchId: res.data.user.branch_id,
+        branchName: res.data.user.branch_name,
+        role: res.data.user.role,
+        username: res.data.user.username,
+        firstname: res.data.user.firstname,
+        lastname: res.data.user.lastname,
+        email: res.data.user.email,
+        phone: res.data.user.phone,
+        isActive: res.data.user.is_active,
+        mustChangePassword: res.data.user.must_change_password,
+      },
+    });
+    showToast("เข้าสู่ระบบสำเร็จ", "success");
+    if (res.data.user.must_change_password) {
+      await navigateTo("/change-password");
+      return;
+    }
+    await navigateTo("/pos");
+  } catch (error: any) {
+    clearSession();
+
+    const message =
+      error?.data?.message ||
+      "อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง";
+    showToast(message, "error");
+  } finally {
+    hideLoading();
+  }
 };
 </script>

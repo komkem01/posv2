@@ -10,7 +10,7 @@
         <div>
           <h2 class="font-extrabold text-sm text-slate-800 flex items-center gap-1.5">
             <span class="w-2 h-2 rounded-full bg-blue-600"></span>
-            หมวดหมู่สินค้าทั้งหมด ({{ rawCategories.length }})
+            หมวดหมู่สินค้าทั้งหมด ({{ categories.length }})
           </h2>
           <p class="text-[10px] text-slate-450">เพิ่ม ลบ หรือแก้ไขประเภทสินค้าของร้านค้าคุณ</p>
         </div>
@@ -27,9 +27,15 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-50">
-            <tr v-for="(cat, idx) in rawCategories" :key="cat" class="hover:bg-slate-50/50 transition-colors">
+            <tr v-if="isLoading">
+              <td colspan="3" class="py-8 text-center text-xs text-slate-400 font-semibold">กำลังโหลดข้อมูล...</td>
+            </tr>
+            <tr v-else-if="categories.length === 0">
+              <td colspan="3" class="py-8 text-center text-xs text-slate-400 font-semibold">ยังไม่มีหมวดหมู่สินค้า</td>
+            </tr>
+            <tr v-else v-for="(cat, idx) in categories" :key="cat.id" class="hover:bg-slate-50/50 transition-colors">
               <td class="py-3.5 pl-2 font-mono text-slate-450 font-semibold whitespace-nowrap">{{ idx + 1 }}</td>
-              <td class="py-3.5 text-slate-800 font-bold text-sm whitespace-nowrap">{{ cat }}</td>
+              <td class="py-3.5 text-slate-800 font-bold text-sm whitespace-nowrap">{{ cat.name }}</td>
               <td class="py-3.5 text-center space-x-2 whitespace-nowrap">
                 <button 
                   @click="startEditCategory(cat, idx)"
@@ -117,7 +123,7 @@
         </div>
         <div class="space-y-1.5">
           <h3 class="text-sm font-extrabold text-slate-800">ยืนยันการลบหมวดหมู่</h3>
-          <p class="text-[11px] font-bold text-slate-500 leading-normal">คุณต้องการลบหมวดหมู่ "{{ categoryToDelete?.cat }}" ออกจากระบบใช่หรือไม่? การกระทำนี้ไม่สามารถกู้คืนได้</p>
+          <p class="text-[11px] font-bold text-slate-500 leading-normal">คุณต้องการลบหมวดหมู่ "{{ categoryToDelete?.name }}" ออกจากระบบใช่หรือไม่? การกระทำนี้ไม่สามารถกู้คืนได้</p>
         </div>
         <div class="flex gap-2.5 pt-1">
           <button @click="executeDelete" class="flex-grow inline-flex items-center justify-center px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98] transform">
@@ -133,118 +139,120 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useToast } from '~/composables/useToast'
 
 const { showToast } = useToast()
+const { get, post, patch, del } = useApi()
 
 // Page configurations
 definePageMeta({
   layout: 'admin',
-  middleware: [
-    () => {
-      const authState = useState('auth') as any
-      if (!authState.value || !authState.value.isLoggedIn) {
-        return navigateTo('/login')
-      }
-    }
-  ]
+  middleware: ['auth']
 })
 
-// Categories shared global state
-const rawCategories = useState<string[]>('categories', () => ['เครื่องดื่ม', 'อาหาร', 'ของหวาน', 'ของทานเล่น'])
-
-// Products shared state to automatically update categories for existing items
-interface Product {
-  id: number
+interface Category {
+  id: string
   name: string
-  price: number
-  category: string
-  stock: number
+  isActive: boolean
 }
-const products = useState<Product[]>('products')
+
+const categories = ref<Category[]>([])
+const isLoading = ref(false)
+
+const loadCategories = async () => {
+  isLoading.value = true
+  try {
+    const res = await get<{ id: string; name: string; is_active: boolean }[]>('/api/v1/store/category', { size: 1000 })
+    categories.value = (res.data ?? []).map(c => ({ id: c.id, name: c.name, isActive: c.is_active }))
+  } catch {
+    showToast('โหลดหมวดหมู่ไม่สำเร็จ', 'error')
+  } finally {
+    isLoading.value = false
+  }
+}
+
+onMounted(loadCategories)
 
 // Local Edit/Form States
 const isEditingCategory = ref(false)
+const editCategoryId = ref<string | null>(null)
 const editCategoryIndex = ref<number | null>(null)
-const editCategoryOriginalName = ref('')
 const categoryForm = ref({ name: '', error: '' })
 
 // Custom Delete Confirmation Modal States
 const showConfirmDeleteModal = ref(false)
-const categoryToDelete = ref<{ cat: string, index: number } | null>(null)
+const categoryToDelete = ref<{ id: string; name: string; index: number } | null>(null)
+const isDeleting = ref(false)
+const isSaving = ref(false)
 
-const startEditCategory = (cat: string, index: number) => {
+const startEditCategory = (cat: Category, index: number) => {
   isEditingCategory.value = true
+  editCategoryId.value = cat.id
   editCategoryIndex.value = index
-  editCategoryOriginalName.value = cat
-  categoryForm.value = { name: cat, error: '' }
+  categoryForm.value = { name: cat.name, error: '' }
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 const cancelCategoryEdit = () => {
   isEditingCategory.value = false
+  editCategoryId.value = null
   editCategoryIndex.value = null
-  editCategoryOriginalName.value = ''
   categoryForm.value = { name: '', error: '' }
 }
 
-const saveCategory = () => {
+const saveCategory = async () => {
   const name = categoryForm.value.name.trim()
   if (!name) {
     showToast('กรุณากรอกชื่อหมวดหมู่', 'error')
     return
   }
-
-  // Duplicate Check
-  const duplicate = rawCategories.value.some((c, idx) => c.toLowerCase() === name.toLowerCase() && (!isEditingCategory.value || idx !== editCategoryIndex.value))
+  const duplicate = categories.value.some(
+    (c, idx) => c.name.toLowerCase() === name.toLowerCase() && (!isEditingCategory.value || idx !== editCategoryIndex.value)
+  )
   if (duplicate) {
     showToast('มีชื่อหมวดหมู่นี้ในระบบแล้ว', 'error')
     return
   }
 
-  if (isEditingCategory.value && editCategoryIndex.value !== null) {
-    const oldName = editCategoryOriginalName.value
-    // Update Category Name in state
-    rawCategories.value[editCategoryIndex.value] = name
-    // Update matching products categories automatically
-    if (products.value) {
-      products.value.forEach(p => {
-        if (p.category === oldName) {
-          p.category = name
-        }
-      })
+  isSaving.value = true
+  try {
+    if (isEditingCategory.value && editCategoryId.value) {
+      await patch(`/api/v1/store/category/${editCategoryId.value}`, { name, is_active: true })
+      showToast('แก้ไขหมวดหมู่สำเร็จ', 'success')
+    } else {
+      await post('/api/v1/store/category', { name, is_active: true })
+      showToast('เพิ่มหมวดหมู่ใหม่สำเร็จ', 'success')
     }
-    showToast('แก้ไขหมวดหมู่สำเร็จ', 'success')
-  } else {
-    // Add Category to state
-    rawCategories.value.push(name)
-    showToast('เพิ่มหมวดหมู่ใหม่สำเร็จ', 'success')
+    await loadCategories()
+    cancelCategoryEdit()
+  } catch (e: any) {
+    showToast(e?.data?.message || 'บันทึกไม่สำเร็จ', 'error')
+  } finally {
+    isSaving.value = false
   }
-
-  cancelCategoryEdit()
 }
 
-const confirmDelete = (cat: string, index: number) => {
-  // Prevent delete if there are products attached to this category
-  const hasProducts = products.value?.some(p => p.category === cat) ?? false
-  if (hasProducts) {
-    showToast(`ไม่สามารถลบหมวดหมู่ "${cat}" ได้ เนื่องจากยังมีสินค้าอยู่ในหมวดหมู่นี้`, 'error')
-    return
-  }
-
-  categoryToDelete.value = { cat, index }
+const confirmDelete = (cat: Category, index: number) => {
+  categoryToDelete.value = { id: cat.id, name: cat.name, index }
   showConfirmDeleteModal.value = true
 }
 
-const executeDelete = () => {
-  if (categoryToDelete.value !== null) {
-    const { cat, index } = categoryToDelete.value
-    rawCategories.value.splice(index, 1)
-    showToast(`ลบหมวดหมู่ "${cat}" สำเร็จ`, 'success')
+const executeDelete = async () => {
+  if (!categoryToDelete.value) return
+  const { id, name } = categoryToDelete.value
+  isDeleting.value = true
+  try {
+    await del(`/api/v1/store/category/${id}`)
+    showToast(`ลบหมวดหมู่ "${name}" สำเร็จ`, 'success')
     showConfirmDeleteModal.value = false
     categoryToDelete.value = null
     cancelCategoryEdit()
+    await loadCategories()
+  } catch (e: any) {
+    showToast(e?.data?.message || 'ลบไม่สำเร็จ', 'error')
+  } finally {
+    isDeleting.value = false
   }
 }
 </script>

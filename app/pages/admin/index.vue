@@ -289,17 +289,9 @@
 <script setup lang="ts">
 import { ref } from "vue";
 
-// Enforce authentication route guard
 definePageMeta({
   layout: 'admin',
-  middleware: [
-    () => {
-      const authState = useState("auth") as any;
-      if (!authState.value || !authState.value.isLoggedIn) {
-        return navigateTo("/login");
-      }
-    },
-  ],
+  middleware: ['auth'],
 });
 
 // Mock Transactions

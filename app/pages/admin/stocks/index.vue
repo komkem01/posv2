@@ -263,34 +263,100 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useToast } from '~/composables/useToast'
 
 const { showToast } = useToast()
+const { get, post, patch } = useApi()
+const { auth } = useAuth()
 
 // Page Configurations
 definePageMeta({
   layout: 'admin',
-  middleware: [
-    () => {
-      const authState = useState('auth') as any
-      if (!authState.value || !authState.value.isLoggedIn) {
-        return navigateTo('/login')
-      }
-    }
-  ]
+  middleware: ['auth']
 })
 
-// Products shared global state
-interface Product {
-  id: number
-  name: string
-  price: number
-  category: string
+interface StockItem {
+  productId: string
+  productName: string
+  categoryName: string
+  stockId: string | null
   stock: number
+  branchId: string
 }
-const products = useState<Product[]>('products')
+
+const stockItems = ref<StockItem[]>([])
+const isLoading = ref(false)
+
+// Convert to the shape used in template
+// Template uses `products` and expects { id, name, category, stock }
+const products = computed(() => stockItems.value.map(s => ({
+  id: s.productId,
+  name: s.productName,
+  category: s.categoryName,
+  stock: s.stock
+})))
+
+const loadStockData = async () => {
+  isLoading.value = true
+  try {
+    const [prodRes, stockRes] = await Promise.all([
+      get<{ id: string; name: string; category_name: string | null }[]>('/api/v1/store/product', { size: 1000 }),
+      get<{ id: string; product_id: string; branch_id: string; stock: number }[]>('/api/v1/store/product-stock', { size: 1000 })
+    ])
+    const branchId = auth.value.user?.branchId ?? ''
+    const stockMap = new Map<string, { id: string; stock: number; branchId: string }>()
+    for (const s of stockRes.data ?? []) {
+      if (!stockMap.has(s.product_id)) {
+        stockMap.set(s.product_id, { id: s.id, stock: s.stock, branchId: s.branch_id })
+      }
+    }
+    stockItems.value = (prodRes.data ?? []).map(p => {
+      const s = stockMap.get(p.id)
+      return {
+        productId: p.id,
+        productName: p.name,
+        categoryName: p.category_name ?? '',
+        stockId: s?.id ?? null,
+        stock: s?.stock ?? 0,
+        branchId: s?.branchId ?? branchId
+      }
+    })
+  } catch {
+    showToast('โหลดข้อมูลสต็อกไม่สำเร็จ', 'error')
+  } finally {
+    isLoading.value = false
+  }
+}
+
+onMounted(loadStockData)
+
+const updateStock = async (productId: string, newStock: number) => {
+  const item = stockItems.value.find(s => s.productId === productId)
+  if (!item) return
+  try {
+    if (item.stockId) {
+      await patch(`/api/v1/store/product-stock/${item.stockId}`, {
+        product_id: item.productId,
+        branch_id: item.branchId || auth.value.user?.branchId,
+        stock: newStock
+      })
+    } else {
+      const branchId = auth.value.user?.branchId
+      if (!branchId) { showToast('ไม่พบข้อมูลสาขา', 'error'); return }
+      const res = await post<{ id: string; stock: number }>('/api/v1/store/product-stock', {
+        product_id: item.productId,
+        branch_id: branchId,
+        stock: newStock
+      })
+      if (res.data) item.stockId = res.data.id
+    }
+    item.stock = newStock
+  } catch (e: any) {
+    showToast(e?.data?.message || 'อัปเดตสต็อกไม่สำเร็จ', 'error')
+  }
+}
 
 // Search & Replenish Form states
 const stockSearch = ref('')
 const replenishForm = ref({
-  productId: '' as number | string,
+  productId: '' as string,
   quantity: '' as string | number,
   error: ''
 })
@@ -304,15 +370,15 @@ const isProductDropdownOpen = ref(false)
 const toggleProductDropdown = () => {
   isProductDropdownOpen.value = !isProductDropdownOpen.value
 }
-const selectProduct = (pId: number) => {
+const selectProduct = (pId: string) => {
   replenishForm.value.productId = pId
   isProductDropdownOpen.value = false
 }
 
 const selectedProductDisplay = computed(() => {
-  if (!replenishForm.value.productId || !products.value) return ''
-  const p = products.value.find(p => p.id === Number(replenishForm.value.productId))
-  return p ? `${p.name} (มีอยู่ ${p.stock} ชิ้น)` : ''
+  if (!replenishForm.value.productId) return ''
+  const p = stockItems.value.find(s => s.productId === replenishForm.value.productId)
+  return p ? `${p.productName} (มีอยู่ ${p.stock} ชิ้น)` : ''
 })
 
 // Close dropdown when clicking outside
@@ -326,7 +392,6 @@ onUnmounted(() => document.removeEventListener('click', closeDropdown))
 
 // Filtered products list
 const filteredProducts = computed(() => {
-  if (!products.value) return []
   return products.value.filter(p => {
     return p.name.toLowerCase().includes(stockSearch.value.toLowerCase())
   })
@@ -334,21 +399,20 @@ const filteredProducts = computed(() => {
 
 // Low stock computation
 const lowStockItems = computed(() => {
-  if (!products.value) return []
   return products.value.filter(p => p.stock < 5)
 })
 
 // Quick adjust quantity by +/- increments
-const adjustStock = (productId: number, amount: number) => {
-  if (!products.value) return
+const adjustStock = async (productId: string, amount: number) => {
+  const item = stockItems.value.find(s => s.productId === productId)
+  if (!item) return
+  const newStock = Math.max(0, item.stock + amount)
+  await updateStock(productId, newStock)
   const prod = products.value.find(p => p.id === productId)
-  if (prod) {
-    prod.stock = Math.max(0, prod.stock + amount)
-    showToast(`ปรับสต็อกสินค้า "${prod.name}" เป็น ${prod.stock} ชิ้น`, 'info')
-  }
+  showToast(`ปรับสต็อกสินค้า "${prod?.name}" เป็น ${newStock} ชิ้น`, 'info')
 }
 
-const selectReplenishProduct = (prod: Product) => {
+const selectReplenishProduct = (prod: { id: string; name: string; stock: number }) => {
   replenishForm.value.productId = prod.id
   replenishForm.value.quantity = 10
   replenishForm.value.error = ''
@@ -358,38 +422,37 @@ const resetReplenishForm = () => {
   replenishForm.value = { productId: '', quantity: '', error: '' }
 }
 
-const submitReplenish = () => {
+const submitReplenish = async () => {
   const pId = replenishForm.value.productId
   const rawQty = replenishForm.value.quantity
 
-  if (pId === '' || rawQty === '' || rawQty === null) {
+  if (!pId || rawQty === '') {
     showToast('กรุณาเลือกสินค้าและใส่จำนวนที่ต้องการเติม', 'error')
     return
   }
 
   const qty = parseInt(String(rawQty).replace(/,/g, ''), 10)
-
   if (isNaN(qty) || qty <= 0) {
     showToast('จำนวนสินค้าที่เติมต้องเป็นตัวเลขและมากกว่า 0', 'error')
     return
   }
 
-  if (!products.value) return
-  const prod = products.value.find(p => p.id === Number(pId))
-  if (prod) {
-    prod.stock += qty
-    showToast(`เติมสต็อกสินค้า "${prod.name}" จำนวน +${qty} ชิ้น สำเร็จ`, 'success')
-    resetReplenishForm()
-  }
+  const item = stockItems.value.find(s => s.productId === pId)
+  if (!item) return
+  const newStock = item.stock + qty
+  await updateStock(pId, newStock)
+  showToast(`เติมสต็อกสินค้า "${item.productName}" จำนวน +${qty} ชิ้น สำเร็จ`, 'success')
+  resetReplenishForm()
 }
 
 const triggerResetStocks = () => {
   showConfirmResetModal.value = true
 }
 
-const executeResetStocks = () => {
-  if (!products.value) return
-  products.value.forEach(p => p.stock = 0)
+const executeResetStocks = async () => {
+  for (const item of stockItems.value) {
+    await updateStock(item.productId, 0)
+  }
   showToast('รีเซ็ตสต็อกสินค้าทั้งหมดเป็น 0 สำเร็จ', 'success')
   showConfirmResetModal.value = false
 }
@@ -398,9 +461,10 @@ const triggerRefillStocks = () => {
   showConfirmRefillModal.value = true
 }
 
-const executeRefillStocks = () => {
-  if (!products.value) return
-  products.value.forEach(p => p.stock = 50)
+const executeRefillStocks = async () => {
+  for (const item of stockItems.value) {
+    await updateStock(item.productId, 50)
+  }
   showToast('เติมสต็อกสินค้าทั้งหมดเป็น 50 ชิ้นสำเร็จ', 'success')
   showConfirmRefillModal.value = false
 }
