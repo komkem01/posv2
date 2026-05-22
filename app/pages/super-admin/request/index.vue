@@ -78,7 +78,7 @@
                 >
               </td>
               <td class="py-3 pr-2 text-slate-600 max-w-[220px]">
-                {{ item.address || "-" }}
+                {{ formatAddress(item) }}
               </td>
               <td class="py-3 pr-2 text-slate-600 max-w-[220px]">
                 {{ item.review_note || item.note || "-" }}
@@ -89,7 +89,7 @@
                   class="flex gap-2 justify-end"
                 >
                   <button
-                    @click="approve(item)"
+                    @click="openApproveConfirm(item)"
                     class="px-2.5 py-1.5 rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 font-bold"
                   >
                     อนุมัติ
@@ -181,7 +181,7 @@
           ></textarea>
           <div class="mt-4 flex gap-2">
             <button
-              @click="reject"
+              @click="openRejectConfirm"
               class="flex-1 px-3 py-2.5 rounded-xl text-sm font-bold text-white bg-rose-600 hover:bg-rose-700"
             >
               ยืนยันปฏิเสธ
@@ -196,6 +196,56 @@
         </div>
       </div>
     </Transition>
+
+    <AppModal ref="approveConfirmModalRef" :show-accent="false">
+      <div class="space-y-4">
+        <h2 class="text-base font-bold text-slate-800">ยืนยันการอนุมัติคำขอ</h2>
+        <p class="text-sm text-slate-500 leading-relaxed">
+          ต้องการอนุมัติคำขอร้าน
+          <span class="font-semibold text-slate-700">{{ approveTarget?.store_name || "-" }}</span>
+          ใช่หรือไม่
+        </p>
+        <div class="flex flex-col-reverse sm:flex-row gap-2">
+          <button
+            @click="closeApproveConfirm"
+            class="px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700"
+          >
+            ยกเลิก
+          </button>
+          <button
+            @click="confirmApprove"
+            class="flex-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700"
+          >
+            ยืนยันอนุมัติ
+          </button>
+        </div>
+      </div>
+    </AppModal>
+
+    <AppModal ref="rejectConfirmModalRef" :show-accent="false">
+      <div class="space-y-4">
+        <h2 class="text-base font-bold text-slate-800">ยืนยันการปฏิเสธคำขอ</h2>
+        <p class="text-sm text-slate-500 leading-relaxed">
+          ต้องการปฏิเสธคำขอร้าน
+          <span class="font-semibold text-slate-700">{{ rejectTarget?.store_name || "-" }}</span>
+          ใช่หรือไม่
+        </p>
+        <div class="flex flex-col-reverse sm:flex-row gap-2">
+          <button
+            @click="closeRejectConfirm"
+            class="px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700"
+          >
+            ยกเลิก
+          </button>
+          <button
+            @click="confirmReject"
+            class="flex-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700"
+          >
+            ยืนยันปฏิเสธ
+          </button>
+        </div>
+      </div>
+    </AppModal>
 
     <AppModal ref="logoutModalRef" :show-accent="false">
       <div class="flex items-start gap-3">
@@ -265,6 +315,14 @@ interface StoreRequest {
   status: "PENDING" | "APPROVED" | "REJECTED";
   review_note?: string | null;
   address?: string | null;
+  province_id?: string | null;
+  district_id?: string | null;
+  sub_district_id?: string | null;
+  zipcode_id?: string | null;
+  province_name?: string | null;
+  district_name?: string | null;
+  sub_district_name?: string | null;
+  zipcode_name?: string | null;
 }
 
 interface ApprovePayload {
@@ -293,8 +351,15 @@ const credential = ref<ApprovePayload>({
 });
 
 const showRejectModal = ref(false);
+const approveTarget = ref<StoreRequest | null>(null);
 const rejectTarget = ref<StoreRequest | null>(null);
 const rejectNote = ref("");
+const approveConfirmModalRef = ref<{ open: () => void; close: () => void } | null>(
+  null,
+);
+const rejectConfirmModalRef = ref<{ open: () => void; close: () => void } | null>(
+  null,
+);
 const logoutModalRef = ref<{ open: () => void; close: () => void } | null>(
   null,
 );
@@ -303,6 +368,18 @@ const statusClass = (status: StoreRequest["status"]) => {
   if (status === "APPROVED") return "bg-emerald-50 text-emerald-700";
   if (status === "REJECTED") return "bg-rose-50 text-rose-700";
   return "bg-amber-50 text-amber-700";
+};
+
+const formatAddress = (item: StoreRequest) => {
+  const parts = [
+    item.address?.trim() || "",
+    item.sub_district_name ? `ต.${item.sub_district_name}` : "",
+    item.district_name ? `อ.${item.district_name}` : "",
+    item.province_name || "",
+    item.zipcode_name || "",
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(" ") : "-";
 };
 
 const loadRequests = async () => {
@@ -335,10 +412,36 @@ const approve = async (item: StoreRequest) => {
   }
 };
 
+const openApproveConfirm = (item: StoreRequest) => {
+  approveTarget.value = item;
+  approveConfirmModalRef.value?.open();
+};
+
+const closeApproveConfirm = () => {
+  approveConfirmModalRef.value?.close();
+};
+
+const confirmApprove = async () => {
+  if (!approveTarget.value) return;
+  const target = approveTarget.value;
+  closeApproveConfirm();
+  approveTarget.value = null;
+  await approve(target);
+};
+
 const openReject = (item: StoreRequest) => {
   rejectTarget.value = item;
   rejectNote.value = "";
   showRejectModal.value = true;
+};
+
+const openRejectConfirm = () => {
+  if (!rejectTarget.value) return;
+  rejectConfirmModalRef.value?.open();
+};
+
+const closeRejectConfirm = () => {
+  rejectConfirmModalRef.value?.close();
 };
 
 const reject = async () => {
@@ -355,6 +458,11 @@ const reject = async () => {
   } catch (e: any) {
     showToast(e?.data?.message || "ปฏิเสธไม่สำเร็จ", "error");
   }
+};
+
+const confirmReject = async () => {
+  closeRejectConfirm();
+  await reject();
 };
 
 const handleLogout = async () => {

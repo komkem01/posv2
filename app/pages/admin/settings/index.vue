@@ -31,8 +31,8 @@
             <tr v-for="add in addons" :key="add.id" class="hover:bg-slate-50/50 transition-colors">
               <td class="py-3.5 pl-2 text-slate-850 font-bold text-sm whitespace-nowrap">{{ add.name }}</td>
               <td class="py-3.5 whitespace-nowrap">
-                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold" :class="add.productId === null ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-100 text-slate-650 border border-slate-200/30'">
-                  {{ getProductName(add.productId) }}
+                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold" :class="add.isAllProducts ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-100 text-slate-650 border border-slate-200/30'">
+                  {{ getAddonProductLabel(add) }}
                 </span>
               </td>
               <td class="py-3.5 text-right pr-6 font-mono font-bold text-slate-700 text-sm whitespace-nowrap">
@@ -94,22 +94,30 @@
             <Transition name="fade">
               <div v-if="isProductDropdownOpen" class="absolute left-0 right-0 mt-2 bg-white border border-slate-100 rounded-xl shadow-lg shadow-slate-200/50 py-1.5 z-30 max-h-48 overflow-y-auto">
                 <div 
-                  @click="selectProduct(null)"
+                  @click="selectAllProducts"
                   class="px-4 py-2.5 text-xs font-bold hover:bg-blue-50 cursor-pointer transition-colors flex items-center justify-between"
-                  :class="addonForm.productId === null ? 'text-blue-600 bg-blue-50/50' : 'text-slate-700'"
+                  :class="addonForm.isAllProducts ? 'text-blue-600 bg-blue-50/50' : 'text-slate-700'"
                 >
-                  ทุกสินค้า (All Products)
-                  <svg v-if="addonForm.productId === null" class="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="w-4 h-4 rounded border flex items-center justify-center flex-shrink-0" :class="addonForm.isAllProducts ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'">
+                      <svg v-if="addonForm.isAllProducts" class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                    </span>
+                    <span class="truncate">ทุกสินค้า (All Products)</span>
+                  </div>
                 </div>
                 <div 
                   v-for="prod in products" 
                   :key="prod.id"
-                  @click="selectProduct(prod.id)"
+                  @click="toggleProductSelection(prod.id)"
                   class="px-4 py-2.5 text-xs font-bold hover:bg-blue-50 cursor-pointer transition-colors flex items-center justify-between"
-                  :class="addonForm.productId === prod.id ? 'text-blue-600 bg-blue-50/50' : 'text-slate-700'"
+                  :class="isProductSelected(prod.id) ? 'text-blue-600 bg-blue-50/50' : 'text-slate-700'"
                 >
-                  {{ prod.name }}
-                  <svg v-if="addonForm.productId === prod.id" class="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="w-4 h-4 rounded border flex items-center justify-center flex-shrink-0" :class="isProductSelected(prod.id) ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'">
+                      <svg v-if="isProductSelected(prod.id)" class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                    </span>
+                    <span class="truncate">{{ prod.name }}</span>
+                  </div>
                 </div>
               </div>
             </Transition>
@@ -195,6 +203,7 @@ import { useToast } from '~/composables/useToast'
 
 const { showToast } = useToast()
 const { get, post, patch, del } = useApi()
+const { auth } = useAuth()
 
 // Page Configurations
 definePageMeta({
@@ -211,7 +220,8 @@ interface Addon {
   id: string
   name: string
   price: number
-  productId: string | null
+  productIds: string[]
+  isAllProducts: boolean
 }
 
 interface ProductAddonLink {
@@ -246,12 +256,13 @@ const loadData = async () => {
     addons.value = (addonRes.data ?? [])
       .filter(a => a.is_active)
       .map(a => {
-        const firstLink = linksByAddon[a.id]?.[0]
+        const links = linksByAddon[a.id] ?? []
         return {
           id: a.id,
           name: a.name,
           price: a.price,
-          productId: a.is_all_products ? null : (firstLink?.product_id ?? null)
+          productIds: a.is_all_products ? [] : links.map(link => link.product_id),
+          isAllProducts: a.is_all_products,
         }
       })
   } catch (e: any) {
@@ -269,7 +280,8 @@ const addonForm = ref({
   id: null as string | null,
   name: '',
   price: '' as string | number,
-  productId: null as string | null,
+  productIds: [] as string[],
+  isAllProducts: true,
   error: ''
 })
 
@@ -291,20 +303,39 @@ const isProductDropdownOpen = ref(false)
 const toggleProductDropdown = () => {
   isProductDropdownOpen.value = !isProductDropdownOpen.value
 }
-const selectProduct = (pId: string | null) => {
-  addonForm.value.productId = pId
-  isProductDropdownOpen.value = false
+const selectAllProducts = () => {
+  addonForm.value.isAllProducts = true
+  addonForm.value.productIds = []
+}
+const isProductSelected = (pId: string) => {
+  return !addonForm.value.isAllProducts && addonForm.value.productIds.includes(pId)
+}
+const toggleProductSelection = (pId: string) => {
+  addonForm.value.isAllProducts = false
+  if (addonForm.value.productIds.includes(pId)) {
+    addonForm.value.productIds = addonForm.value.productIds.filter(id => id !== pId)
+  } else {
+    addonForm.value.productIds = [...addonForm.value.productIds, pId]
+  }
 }
 const selectedProductDisplay = computed(() => {
-  if (addonForm.value.productId === null) return 'ทุกสินค้า (All Products)'
-  const p = products.value.find(p => p.id === addonForm.value.productId)
-  return p ? p.name : 'กรุณาเลือกสินค้า...'
+  if (addonForm.value.isAllProducts) return 'ทุกสินค้า (All Products)'
+  if (addonForm.value.productIds.length === 0) return 'กรุณาเลือกสินค้า...'
+  if (addonForm.value.productIds.length === 1) {
+    const p = products.value.find(prod => prod.id === addonForm.value.productIds[0])
+    return p ? p.name : 'กรุณาเลือกสินค้า...'
+  }
+  return `เลือก ${addonForm.value.productIds.length} สินค้า`
 })
 
-const getProductName = (pId: string | null) => {
-  if (pId === null) return 'ทุกสินค้า'
-  const p = products.value.find(p => p.id === pId)
-  return p ? p.name : '-'
+const getAddonProductLabel = (add: Addon) => {
+  if (add.isAllProducts) return 'ทุกสินค้า'
+  if (add.productIds.length === 0) return '-'
+  if (add.productIds.length === 1) {
+    const p = products.value.find(prod => prod.id === add.productIds[0])
+    return p ? p.name : '-'
+  }
+  return `${add.productIds.length} สินค้า`
 }
 
 // Close dropdown when clicking outside
@@ -322,7 +353,8 @@ const startEditAddon = (add: Addon) => {
     id: add.id,
     name: add.name,
     price: add.price,
-    productId: add.productId,
+    productIds: [...add.productIds],
+    isAllProducts: add.isAllProducts,
     error: ''
   }
   window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -330,12 +362,13 @@ const startEditAddon = (add: Addon) => {
 
 const cancelAddonEdit = () => {
   isEditingAddon.value = false
-  addonForm.value = { id: null, name: '', price: null, productId: null, error: '' }
+  addonForm.value = { id: null, name: '', price: null, productIds: [], isAllProducts: true, error: '' }
 }
 
 const saveAddon = async () => {
   const name = addonForm.value.name.trim()
   const rawPrice = addonForm.value.price
+  const branchId = auth.value.user?.branchId
 
   if (!name || rawPrice === '' || rawPrice === null) {
     showToast('กรุณากรอกข้อมูลให้ครบทุกช่อง', 'error')
@@ -349,36 +382,47 @@ const saveAddon = async () => {
     return
   }
 
+  if (!addonForm.value.isAllProducts && addonForm.value.productIds.length === 0) {
+    showToast('กรุณาเลือกสินค้าอย่างน้อย 1 รายการ', 'error')
+    return
+  }
+
+  if (!branchId) {
+    showToast('ไม่พบข้อมูลสาขา', 'error')
+    return
+  }
+
   try {
     if (isEditingAddon.value && addonForm.value.id !== null) {
       const addonId = addonForm.value.id
       await patch(`/api/v1/store/addon/${addonId}`, {
+        branch_id: branchId,
         name,
         price,
-        is_all_products: addonForm.value.productId === null,
+        is_all_products: addonForm.value.isAllProducts,
         is_active: true
       })
 
       const links = addonLinks.value[addonId] ?? []
-      if (addonForm.value.productId === null) {
+      if (addonForm.value.isAllProducts) {
         for (const link of links) {
           await del(`/api/v1/store/product-addon/${link.id}`)
         }
       } else {
-        const matched = links.find(l => l.product_id === addonForm.value.productId)
-        if (!matched) {
-          for (const link of links) {
+        const nextSet = new Set(addonForm.value.productIds)
+        for (const link of links) {
+          if (!nextSet.has(link.product_id)) {
             await del(`/api/v1/store/product-addon/${link.id}`)
           }
-          await post('/api/v1/store/product-addon', {
-            addon_id: addonId,
-            product_id: addonForm.value.productId
-          })
-        } else {
-          for (const link of links) {
-            if (link.id !== matched.id) {
-              await del(`/api/v1/store/product-addon/${link.id}`)
-            }
+        }
+        const currentSet = new Set(links.map(link => link.product_id))
+        for (const productId of addonForm.value.productIds) {
+          if (!currentSet.has(productId)) {
+            await post('/api/v1/store/product-addon', {
+              branch_id: branchId,
+              addon_id: addonId,
+              product_id: productId
+            })
           }
         }
       }
@@ -386,17 +430,21 @@ const saveAddon = async () => {
       showToast('แก้ไขรายการเสริมสำเร็จ', 'success')
     } else {
       const created = await post<{ id: string }>('/api/v1/store/addon', {
+        branch_id: branchId,
         name,
         price,
-        is_all_products: addonForm.value.productId === null,
+        is_all_products: addonForm.value.isAllProducts,
         is_active: true
       })
 
-      if (addonForm.value.productId !== null && created.data?.id) {
-        await post('/api/v1/store/product-addon', {
-          addon_id: created.data.id,
-          product_id: addonForm.value.productId
-        })
+      if (!addonForm.value.isAllProducts && created.data?.id) {
+        for (const productId of addonForm.value.productIds) {
+          await post('/api/v1/store/product-addon', {
+            branch_id: branchId,
+            addon_id: created.data.id,
+            product_id: productId
+          })
+        }
       }
 
       showToast('เพิ่มรายการเสริมใหม่สำเร็จ', 'success')

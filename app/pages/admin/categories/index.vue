@@ -144,6 +144,7 @@ import { useToast } from '~/composables/useToast'
 
 const { showToast } = useToast()
 const { get, post, patch, del } = useApi()
+const { auth } = useAuth()
 
 // Page configurations
 definePageMeta({
@@ -215,13 +216,19 @@ const saveCategory = async () => {
     return
   }
 
+  const branchId = auth.value.user?.branchId
+  if (!branchId) {
+    showToast('ไม่พบข้อมูลสาขา', 'error')
+    return
+  }
+
   isSaving.value = true
   try {
     if (isEditingCategory.value && editCategoryId.value) {
-      await patch(`/api/v1/store/category/${editCategoryId.value}`, { name, is_active: true })
+      await patch(`/api/v1/store/category/${editCategoryId.value}`, { name, is_active: true, branch_id: branchId })
       showToast('แก้ไขหมวดหมู่สำเร็จ', 'success')
     } else {
-      await post('/api/v1/store/category', { name, is_active: true })
+      await post('/api/v1/store/category', { name, is_active: true, branch_id: branchId })
       showToast('เพิ่มหมวดหมู่ใหม่สำเร็จ', 'success')
     }
     await loadCategories()

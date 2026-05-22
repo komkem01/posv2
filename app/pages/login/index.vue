@@ -47,7 +47,7 @@
             <label
               for="email"
               class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1"
-              >ที่อยู่อีเมล (Email)</label
+              >อีเมล หรือชื่อผู้ใช้</label
             >
             <div class="relative">
               <span
@@ -70,9 +70,9 @@
               <input
                 id="email"
                 v-model="email"
-                type="email"
+                type="text"
                 required
-                placeholder="admin@easypos.com"
+                placeholder="admin@easypos.com หรือ username"
                 class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all font-medium"
               />
             </div>

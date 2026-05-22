@@ -208,6 +208,7 @@ import { useToast } from '~/composables/useToast'
 
 const { showToast } = useToast()
 const { get, post, patch, del } = useApi()
+const { auth } = useAuth()
 
 // Page Configurations
 definePageMeta({
@@ -373,11 +374,18 @@ const saveProduct = async () => {
     return
   }
 
+  const branchId = auth.value.user?.branchId
+  if (!branchId) {
+    showToast('ไม่พบข้อมูลสาขา', 'error')
+    return
+  }
+
   isSaving.value = true
   try {
     if (isEditingProduct.value && productForm.value.id) {
       const current = products.value.find(p => p.id === productForm.value.id)
       await patch(`/api/v1/store/product/${productForm.value.id}`, {
+        branch_id: branchId,
         category_id: categoryId,
         barcode: current?.barcode || `BAR-${Date.now()}`,
         sku: current?.sku || `SKU-${Date.now()}`,
@@ -390,6 +398,7 @@ const saveProduct = async () => {
     } else {
       const ts = Date.now()
       await post('/api/v1/store/product', {
+        branch_id: branchId,
         category_id: categoryId,
         barcode: `BAR-${ts}`,
         sku: `SKU-${ts}`,

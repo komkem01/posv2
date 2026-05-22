@@ -204,6 +204,37 @@
         </button>
       </form>
 
+      <AppModal
+        ref="successModalRef"
+        max-width-class="max-w-lg"
+        :show-accent="false"
+        :close-on-backdrop="false"
+      >
+        <div class="space-y-5 text-center">
+          <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+            <svg viewBox="0 0 24 24" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+          </div>
+
+          <div>
+            <h3 class="text-lg font-extrabold text-slate-800">ส่งคำขอเรียบร้อยแล้ว</h3>
+            <p class="mt-2 text-sm text-slate-600 leading-6">
+              ระบบได้รับคำขอสมัครร้านค้าของคุณแล้ว
+              เมื่อทีมงานอนุมัติ จะส่งข้อมูลเข้าสู่ระบบไปที่อีเมลที่ลงทะเบียนไว้
+            </p>
+          </div>
+
+          <button
+            type="button"
+            class="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 active:bg-blue-800 transition-colors"
+            @click="closeSuccessModal"
+          >
+            ปิด
+          </button>
+        </div>
+      </AppModal>
+
       <!-- <p class="text-xs text-slate-500 mt-5 text-center md:text-left">
         มีบัญชีอยู่แล้ว?
         <NuxtLink to="/login" class="text-blue-600 hover:text-blue-700 font-bold">เข้าสู่ระบบ</NuxtLink>
@@ -213,7 +244,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { onMounted, ref, watch } from "vue";
 import { useToast } from "~/composables/useToast";
 
 const { showToast } = useToast();
@@ -246,6 +277,9 @@ interface ApiListResponse<T> {
 
 const isSubmitting = ref(false);
 const isAddressLoading = ref(false);
+const successModalRef = ref<{ open: () => void; close: () => void } | null>(
+  null,
+);
 
 const provinces = ref<LocationItem[]>([]);
 const districts = ref<DistrictItem[]>([]);
@@ -266,29 +300,6 @@ const form = ref({
   desiredUsername: "",
   note: "",
 });
-
-const selectedProvinceName = computed(
-  () =>
-    provinces.value.find((item) => item.id === form.value.provinceId)?.name ||
-    "",
-);
-
-const selectedDistrictName = computed(
-  () =>
-    districts.value.find((item) => item.id === form.value.districtId)?.name ||
-    "",
-);
-
-const selectedSubDistrictName = computed(
-  () =>
-    subDistricts.value.find((item) => item.id === form.value.subDistrictId)
-      ?.name || "",
-);
-
-const selectedZipcodeName = computed(
-  () =>
-    zipcodes.value.find((item) => item.id === form.value.zipcodeId)?.name || "",
-);
 
 const fetchList = async <T,>(path: string): Promise<T[]> => {
   const baseApi = runtimeConfig.public.baseApi || "http://localhost:8080";
@@ -391,18 +402,6 @@ watch(
   },
 );
 
-const buildAddressNote = () => {
-  const parts = [
-    form.value.addressDetail.trim(),
-    selectedSubDistrictName.value ? `ต.${selectedSubDistrictName.value}` : "",
-    selectedDistrictName.value ? `อ.${selectedDistrictName.value}` : "",
-    selectedProvinceName.value,
-    selectedZipcodeName.value,
-  ].filter(Boolean);
-
-  return parts.join(" ");
-};
-
 const resetForm = () => {
   form.value = {
     storeName: "",
@@ -423,6 +422,40 @@ const resetForm = () => {
   zipcodes.value = [];
 };
 
+const buildFullAddress = () => {
+  const provinceName =
+    provinces.value.find((item) => item.id === form.value.provinceId)?.name ||
+    "";
+  const districtName =
+    districts.value.find((item) => item.id === form.value.districtId)?.name ||
+    "";
+  const subDistrictName =
+    subDistricts.value.find((item) => item.id === form.value.subDistrictId)
+      ?.name || "";
+  const zipcodeName =
+    zipcodes.value.find((item) => item.id === form.value.zipcodeId)?.name ||
+    "";
+
+  return [
+    form.value.addressDetail.trim(),
+    subDistrictName ? `ต.${subDistrictName}` : "",
+    districtName ? `อ.${districtName}` : "",
+    provinceName,
+    zipcodeName,
+  ]
+    .filter(Boolean)
+    .join(" ");
+};
+
+const openSuccessModal = () => {
+  successModalRef.value?.open();
+};
+
+const closeSuccessModal = async () => {
+  successModalRef.value?.close();
+  await navigateTo("/login");
+};
+
 const submitRequest = async () => {
   if (
     !form.value.provinceId ||
@@ -437,10 +470,7 @@ const submitRequest = async () => {
   isSubmitting.value = true;
   try {
     const baseApi = runtimeConfig.public.baseApi || "http://localhost:8080";
-    const addressNote = buildAddressNote();
-    const mergedNote = [form.value.note?.trim(), `ที่อยู่ร้าน : ${addressNote}`]
-      .filter(Boolean)
-      .join("\n");
+    const fullAddress = buildFullAddress();
 
     await $fetch(`${baseApi}/api/v1/public/store-registration-request`, {
       method: "POST",
@@ -450,12 +480,17 @@ const submitRequest = async () => {
         owner_lastname: form.value.ownerLastname,
         owner_email: form.value.ownerEmail,
         owner_phone: form.value.ownerPhone,
+        address: fullAddress || form.value.addressDetail,
+        province_id: form.value.provinceId,
+        district_id: form.value.districtId,
+        sub_district_id: form.value.subDistrictId,
+        zipcode_id: form.value.zipcodeId,
         desired_username: form.value.desiredUsername || undefined,
-        note: mergedNote || undefined,
+        note: form.value.note?.trim() || undefined,
       },
     });
-    showToast("ส่งคำขอสมัครร้านค้าเรียบร้อยแล้ว", "success");
     resetForm();
+    openSuccessModal();
   } catch (e: any) {
     showToast(e?.data?.message || "ส่งคำขอไม่สำเร็จ", "error");
   } finally {

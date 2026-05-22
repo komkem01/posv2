@@ -112,7 +112,7 @@
           <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
           </svg>
-          ฟอร์มเติมสต็อกสินค้า
+          ฟอร์มปรับสต็อกสินค้า
         </h3>
 
         <div class="space-y-3">
@@ -149,7 +149,29 @@
           </div>
 
           <div>
-            <label class="block text-xs font-bold text-slate-500 mb-1">จำนวนที่เติมเพิ่ม</label>
+            <label class="block text-xs font-bold text-slate-500 mb-1">ประเภทการปรับสต็อก</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                @click="replenishForm.mode = 'add'"
+                type="button"
+                class="px-3 py-2 rounded-xl border text-xs font-bold transition-colors"
+                :class="replenishForm.mode === 'add' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'"
+              >
+                เพิ่มสต็อก
+              </button>
+              <button
+                @click="replenishForm.mode = 'subtract'"
+                type="button"
+                class="px-3 py-2 rounded-xl border text-xs font-bold transition-colors"
+                :class="replenishForm.mode === 'subtract' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'"
+              >
+                ลดสต็อก
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-500 mb-1">จำนวนที่ต้องการปรับ</label>
             <input
               v-model="replenishForm.quantity"
               type="text"
@@ -164,7 +186,7 @@
             @click="submitReplenish"
             class="flex-grow inline-flex items-center justify-center px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors shadow-sm active:scale-[0.98] transform"
           >
-            ยืนยันการเติมสินค้า
+            ยืนยันการปรับสต็อก
           </button>
           <button
             @click="resetReplenishForm"
@@ -357,6 +379,7 @@ const updateStock = async (productId: string, newStock: number) => {
 const stockSearch = ref('')
 const replenishForm = ref({
   productId: '' as string,
+  mode: 'add' as 'add' | 'subtract',
   quantity: '' as string | number,
   error: ''
 })
@@ -414,12 +437,13 @@ const adjustStock = async (productId: string, amount: number) => {
 
 const selectReplenishProduct = (prod: { id: string; name: string; stock: number }) => {
   replenishForm.value.productId = prod.id
+  replenishForm.value.mode = 'add'
   replenishForm.value.quantity = 10
   replenishForm.value.error = ''
 }
 
 const resetReplenishForm = () => {
-  replenishForm.value = { productId: '', quantity: '', error: '' }
+  replenishForm.value = { productId: '', mode: 'add', quantity: '', error: '' }
 }
 
 const submitReplenish = async () => {
@@ -439,9 +463,19 @@ const submitReplenish = async () => {
 
   const item = stockItems.value.find(s => s.productId === pId)
   if (!item) return
-  const newStock = item.stock + qty
+  if (replenishForm.value.mode === 'subtract' && qty > item.stock) {
+    showToast(`สต็อกไม่พอสำหรับการลด (คงเหลือ ${item.stock} ชิ้น)`, 'error')
+    return
+  }
+
+  const newStock = replenishForm.value.mode === 'add'
+    ? item.stock + qty
+    : item.stock - qty
+
   await updateStock(pId, newStock)
-  showToast(`เติมสต็อกสินค้า "${item.productName}" จำนวน +${qty} ชิ้น สำเร็จ`, 'success')
+  const verb = replenishForm.value.mode === 'add' ? 'เพิ่ม' : 'ลด'
+  const sign = replenishForm.value.mode === 'add' ? '+' : '-'
+  showToast(`${verb}สต็อกสินค้า "${item.productName}" จำนวน ${sign}${qty} ชิ้น สำเร็จ`, 'success')
   resetReplenishForm()
 }
 
