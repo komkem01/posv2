@@ -106,6 +106,18 @@
             จัดการรายการเสริม (Add-ons)
           </NuxtLink>
 
+          <!-- Manage Staffs -->
+          <NuxtLink
+            to="/admin/staff"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all duration-200"
+            :class="route.path === '/admin/staff' 
+              ? 'bg-blue-50 text-blue-600 shadow-sm border border-blue-100/50' 
+              : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'"
+          >
+            <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5V9H2v11h5m10 0v-2a4 4 0 00-4-4H11a4 4 0 00-4 4v2m10 0H7m8-12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            จัดการพนักงาน
+          </NuxtLink>
+
         </div>
       </div>
     </div>

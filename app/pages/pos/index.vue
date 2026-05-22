@@ -64,7 +64,7 @@
 
       <!-- Products Grid -->
       <div
-        class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4 overflow-y-auto md:flex-grow pr-1 pb-4"
+        class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4 overflow-y-auto md:flex-grow pr-1 pb-4 content-start auto-rows-max"
       >
         <div
           v-for="product in filteredProducts"
@@ -206,7 +206,7 @@
             class="flex flex-col gap-1.5 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-all duration-200"
           >
             <div class="flex justify-between items-start gap-2">
-              <h4 class="font-bold text-slate-800 text-[11px] leading-tight">
+              <h4 class="font-bold text-slate-800 text-sm leading-tight">
                 {{ item.product.name }}
               </h4>
               <p class="text-[10px] text-slate-400 font-semibold whitespace-nowrap mt-0.5">
@@ -223,7 +223,7 @@
               <span 
                 v-for="addon in item.selectedAddons" 
                 :key="addon.id"
-                class="px-1.5 py-0.5 rounded bg-blue-50 text-[9px] font-bold text-blue-600 border border-blue-100/50"
+                class="px-1.5 py-0.5 rounded bg-blue-50 text-[10px] font-bold text-blue-600 border border-blue-100/50"
               >
                 + {{ addon.name }} (฿{{ addon.price }})
               </span>
@@ -557,10 +557,26 @@
           </button>
         </div>
 
+        <div class="space-y-2">
+          <p class="text-[11px] font-bold text-slate-500">เลือกเซคชัน</p>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              v-for="section in addonSectionsForActiveProduct"
+              :key="section.key"
+              @click="activeAddonSection = section.key"
+              type="button"
+              class="px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors"
+              :class="activeAddonSection === section.key ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'"
+            >
+              {{ section.title }} ({{ section.items.length }})
+            </button>
+          </div>
+        </div>
+
         <!-- Addons list -->
-        <div class="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+        <div class="space-y-2.5 pr-1">
           <div
-            v-for="addon in availableAddonsForActiveProduct"
+            v-for="addon in activeAddonSectionItems"
             :key="addon.id"
             @click="toggleAddonSelection(addon)"
             class="flex items-center justify-between p-3 rounded-2xl border cursor-pointer transition-all duration-200"
@@ -628,6 +644,12 @@ interface Addon {
   name: string;
   price: number;
   productId: string | null;
+}
+
+interface AddonSection {
+  key: string;
+  title: string;
+  items: Addon[];
 }
 
 interface CartItem {
@@ -720,12 +742,52 @@ onMounted(async () => {
 const showAddonModal = ref(false);
 const activeProduct = ref<Product | null>(null);
 const tempSelectedAddons = ref<Addon[]>([]);
+const activeAddonSection = ref('sweetness');
 
 const availableAddonsForActiveProduct = computed(() => {
   if (!activeProduct.value) return [];
   return addons.value.filter(
     (addon) => addon.productId === null || addon.productId === activeProduct.value!.id
   );
+});
+
+const getAddonSectionKey = (addonName: string) => {
+  const name = addonName.toLowerCase();
+  if (name.includes('หวาน') || name.includes('sweet')) return 'sweetness';
+  if (name.includes('น้ำแข็ง') || name.includes('ice') || name.includes('เย็น')) return 'ice';
+  if (name.includes('ไข่มุก') || name.includes('ท็อป') || name.includes('ท้อป') || name.includes('topping') || name.includes('เพิ่ม')) return 'topping';
+  return 'other';
+};
+
+const addonSectionTitles: Record<string, string> = {
+  sweetness: 'ความหวาน',
+  ice: 'น้ำแข็ง',
+  topping: 'ท็อปปิ้ง',
+  other: 'อื่นๆ',
+};
+
+const addonSectionsForActiveProduct = computed<AddonSection[]>(() => {
+  const grouped: Record<string, Addon[]> = {
+    sweetness: [],
+    ice: [],
+    topping: [],
+    other: [],
+  };
+
+  for (const addon of availableAddonsForActiveProduct.value) {
+    grouped[getAddonSectionKey(addon.name)].push(addon);
+  }
+
+  return Object.keys(grouped)
+    .map((key) => ({ key, title: addonSectionTitles[key] || 'อื่นๆ', items: grouped[key] }))
+    .filter((section) => section.items.length > 0);
+});
+
+const activeAddonSectionItems = computed(() => {
+  const sections = addonSectionsForActiveProduct.value;
+  if (sections.length === 0) return [];
+  const target = sections.find((section) => section.key === activeAddonSection.value);
+  return target ? target.items : sections[0].items;
 });
 
 const openAddonModal = (product: Product) => {
@@ -740,6 +802,8 @@ const openAddonModal = (product: Product) => {
   if (applicable.length === 0) {
     addToCart(product, []);
   } else {
+    const sections = addonSectionsForActiveProduct.value;
+    activeAddonSection.value = sections[0]?.key || 'sweetness';
     showAddonModal.value = true;
   }
 };
