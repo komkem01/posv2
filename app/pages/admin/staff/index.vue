@@ -1,13 +1,13 @@
 <template>
   <div
-    class="min-h-[calc(100vh-140px)] lg:h-[calc(100vh-154px)] bg-slate-50 text-slate-800 p-4 sm:p-6 lg:p-6 flex flex-col-reverse lg:flex-row gap-6 overflow-hidden lg:h-full relative"
+    class="h-[calc(100vh-154px)] bg-slate-50 text-slate-800 p-4 sm:p-6 lg:p-6 flex flex-col-reverse lg:flex-row gap-6 overflow-hidden relative min-h-0"
   >
     <div
       class="absolute top-10 left-10 w-72 h-72 bg-blue-500/5 rounded-full blur-[100px] pointer-events-none"
     ></div>
 
     <div
-      class="flex-grow lg:w-3/5 bg-white border border-slate-200 rounded-3xl p-5 flex flex-col lg:h-full lg:overflow-hidden shadow-sm z-10"
+      class="flex-grow lg:w-3/5 bg-white border border-slate-200 rounded-3xl p-5 flex flex-col h-full overflow-hidden shadow-sm z-10 min-h-0"
     >
       <div class="flex justify-between items-center mb-4 flex-shrink-0">
         <div>
@@ -21,10 +21,16 @@
             เพิ่ม แก้ไข และลบพนักงานภายในสาขา
           </p>
         </div>
+        <div v-if="currentRole === 'CASHIER'" class="flex items-center">
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-700 text-[10px] font-extrabold tracking-wide">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+            โหมดอ่านอย่างเดียว
+          </span>
+        </div>
       </div>
 
       <div
-        class="flex-grow overflow-x-auto lg:overflow-y-auto lg:overflow-x-hidden pr-1 pb-4 lg:pb-0"
+        class="flex-grow min-h-0 overflow-auto pr-1 pb-4 lg:pb-0"
       >
         <table class="w-full text-left text-xs border-collapse min-w-[700px]">
           <thead>
@@ -198,28 +204,74 @@
             <label class="block text-xs font-bold text-slate-500 mb-1"
               >ตำแหน่ง</label
             >
-            <select
-              v-model="staffForm.role"
-              placeholder="เลือกตำแหน่ง"
-              class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold"
-            >
-              <option v-for="role in availableRoles" :key="role" :value="role">
-                {{ roleLabel(role) }}
-              </option>
-            </select>
+            <div class="relative">
+              <button
+                type="button"
+                @click="toggleRoleDropdown"
+                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold flex items-center justify-between"
+              >
+                <span>{{ selectedRoleLabel }}</span>
+                <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+              </button>
+
+              <div
+                v-if="showRoleDropdown"
+                class="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden"
+              >
+                <button
+                  v-for="role in availableRoles"
+                  :key="role"
+                  type="button"
+                  @click="selectRole(role)"
+                  class="w-full px-3.5 py-2 text-xs font-semibold text-left hover:bg-slate-50"
+                  :class="staffForm.role === role ? 'bg-blue-50 text-blue-700' : 'text-slate-700'"
+                >
+                  {{ roleLabel(role) }}
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div class="flex items-center gap-2 mt-6">
-            <input
-              v-model="staffForm.is_active"
-              id="staff-active"
-              type="checkbox"
-              placeholder="เลือกสถานะ"
-              class="w-4 h-4 rounded border-slate-300 text-blue-600"
-            />
-            <label for="staff-active" class="text-xs font-bold text-slate-600"
-              >สถานะใช้งาน</label
+          <div>
+            <label class="block text-xs font-bold text-slate-500 mb-1"
+              >สถานะ</label
             >
+            <div class="relative">
+              <button
+                type="button"
+                @click="toggleStatusDropdown"
+                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold flex items-center justify-between"
+              >
+                <span>{{ selectedStatusLabel }}</span>
+                <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+              </button>
+
+              <div
+                v-if="showStatusDropdown"
+                class="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden"
+              >
+                <button
+                  type="button"
+                  @click="selectStatus(true)"
+                  class="w-full px-3.5 py-2 text-xs font-semibold text-left hover:bg-slate-50"
+                  :class="staffForm.is_active ? 'bg-emerald-50 text-emerald-700' : 'text-slate-700'"
+                >
+                  ใช้งาน
+                </button>
+                <button
+                  type="button"
+                  @click="selectStatus(false)"
+                  class="w-full px-3.5 py-2 text-xs font-semibold text-left hover:bg-slate-50"
+                  :class="!staffForm.is_active ? 'bg-rose-50 text-rose-700' : 'text-slate-700'"
+                >
+                  ปิดใช้งาน
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -312,6 +364,8 @@ const editingStaffId = ref<string | null>(null);
 const showConfirmDeleteModal = ref(false);
 const staffToDeleteId = ref<string | null>(null);
 const staffToDeleteName = ref("");
+const showRoleDropdown = ref(false);
+const showStatusDropdown = ref(false);
 
 const roleLabel = (role: string) => {
   if (role === "OWNER") return "เจ้าของร้าน";
@@ -351,7 +405,7 @@ const canDeleteStaff = (staff: Staff) => {
   return false;
 };
 
-const availableRoles = computed(() => {
+const availableRoles = computed<Staff["role"][]>(() => {
   const authRole = String(auth.value.user?.role || "").toUpperCase();
   if (authRole === "SUPER_ADMIN")
     return ["SUPER_ADMIN", "OWNER", "MANAGER", "CASHIER"];
@@ -359,6 +413,36 @@ const availableRoles = computed(() => {
   if (authRole === "MANAGER") return ["MANAGER", "CASHIER"];
   return [];
 });
+
+const selectedRoleLabel = computed(() => roleLabel(staffForm.value.role));
+
+const selectedStatusLabel = computed(() =>
+  staffForm.value.is_active ? "ใช้งาน" : "ปิดใช้งาน",
+);
+
+const toggleRoleDropdown = () => {
+  showRoleDropdown.value = !showRoleDropdown.value;
+  if (showRoleDropdown.value) {
+    showStatusDropdown.value = false;
+  }
+};
+
+const selectRole = (role: Staff["role"]) => {
+  staffForm.value.role = role;
+  showRoleDropdown.value = false;
+};
+
+const toggleStatusDropdown = () => {
+  showStatusDropdown.value = !showStatusDropdown.value;
+  if (showStatusDropdown.value) {
+    showRoleDropdown.value = false;
+  }
+};
+
+const selectStatus = (isActive: boolean) => {
+  staffForm.value.is_active = isActive;
+  showStatusDropdown.value = false;
+};
 
 const staffForm = ref({
   username: "",
@@ -454,6 +538,8 @@ const startEditStaff = (staff: Staff) => {
     is_active: staff.is_active,
     must_change_password: false,
   };
+  showRoleDropdown.value = false;
+  showStatusDropdown.value = false;
 };
 
 const cancelStaffEdit = () => {
@@ -470,6 +556,8 @@ const cancelStaffEdit = () => {
     is_active: true,
     must_change_password: false,
   };
+  showRoleDropdown.value = false;
+  showStatusDropdown.value = false;
 };
 
 const confirmDelete = (id: string, username: string) => {
