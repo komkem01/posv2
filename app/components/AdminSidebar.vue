@@ -34,7 +34,7 @@
         <div class="hidden lg:block pb-4 border-b border-slate-100">
           <p class="text-[10px] uppercase font-bold tracking-wider text-slate-400">ผู้ใช้งานปัจจุบัน</p>
           <p class="text-xs font-bold text-slate-700 truncate">{{ auth.user?.email || '' }}</p>
-          <p class="text-[10px] text-slate-400">ผู้ดูแลระบบ</p>
+          <p class="text-[10px] text-slate-400">{{ currentUserRoleLabel }}</p>
         </div>
 
       <!-- Navigation Menu -->
@@ -44,9 +44,9 @@
         <!-- Tab Dashboard -->
         <NuxtLink
           to="/admin"
-          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all duration-200"
+          class="relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all duration-200"
           :class="route.path === '/admin' 
-            ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/10' 
+            ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/10 before:absolute before:left-0 before:top-2 before:bottom-2 before:w-1 before:rounded-r-full before:bg-cyan-200/90' 
             : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'"
         >
           <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -106,6 +106,17 @@
             จัดการรายการเสริม (Add-ons)
           </NuxtLink>
 
+          <NuxtLink
+            to="/admin/store-settings"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all duration-200"
+            :class="route.path.startsWith('/admin/store-settings')
+              ? 'bg-blue-50 text-blue-600 shadow-sm border border-blue-100/50'
+              : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'"
+          >
+            <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M5 7l1 12a2 2 0 002 2h8a2 2 0 002-2l1-12M9 7V5a3 3 0 016 0v2"></path></svg>
+            ตั้งค่าร้านค้าและภาษี
+          </NuxtLink>
+
           <!-- Manage Staffs -->
           <NuxtLink
             to="/admin/staff"
@@ -122,8 +133,8 @@
       </div>
     </div>
 
-    <!-- Quick Action back to POS -->
-    <div class="p-4 border-t border-slate-100">
+    <!-- Quick Actions -->
+    <div class="p-4 border-t border-slate-100 space-y-2">
       <NuxtLink 
         to="/pos" 
         class="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 transition-all font-bold text-xs"
@@ -131,21 +142,84 @@
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
         กลับหน้าขาย (EasyPOS)
       </NuxtLink>
+
+      <button
+        type="button"
+        @click="openLogoutModal"
+        class="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 transition-all font-bold text-xs"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17 16l4-4m0 0l-4-4m4 4H9m8 8H7a2 2 0 01-2-2V6a2 2 0 012-2h10"></path></svg>
+        ออกจากระบบ
+      </button>
     </div>
   </div>
+
+  <AppModal ref="logoutModalRef" :show-accent="false">
+    <div class="space-y-4">
+      <div class="space-y-1.5">
+        <h3 class="text-base font-extrabold text-slate-800">ยืนยันออกจากระบบ</h3>
+        <p class="text-sm text-slate-500 leading-relaxed">
+          คุณแน่ใจหรือไม่ว่าต้องการออกจากระบบ? หากคุณออกจากระบบ คุณจะต้องเข้าสู่ระบบอีกครั้งเพื่อเข้าถึงแดชบอร์ดผู้ดูแลระบบ
+        </p>
+      </div>
+
+      <div class="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          @click="closeLogoutModal"
+          class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-sm font-bold"
+        >
+          ยกเลิก
+        </button>
+        <button
+          type="button"
+          @click="handleLogout"
+          class="px-4 py-2 rounded-xl bg-rose-600 text-white hover:bg-rose-700 text-sm font-bold"
+        >
+          ยืนยันออกจากระบบ
+        </button>
+      </div>
+    </div>
+  </AppModal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const route = useRoute()
+const { clearSession } = useAuth()
+const { showToast } = useToast()
+const { isShiftOpen, refreshShiftState } = useShiftState()
+const logoutModalRef = ref<{ open: () => void; close: () => void } | null>(null)
 
 // Access the global shared auth state
 const auth = useState('auth', () => ({
   isLoggedIn: false,
   user: null as any
 }))
+
+const currentUserRoleLabel = computed(() => {
+  const role = String(auth.value.user?.role || '').trim().toUpperCase()
+
+  if (role === 'OWNER') {
+    return 'เจ้าของร้าน (OWNER)'
+  }
+  if (role === 'MANAGER') {
+    return 'ผู้จัดการ (MANAGER)'
+  }
+  if (role === 'CASHIER') {
+    return 'แคชเชียร์ (CASHIER)'
+  }
+  if (role === 'SUPER_ADMIN') {
+    return 'ผู้ดูแลระบบสูงสุด (SUPER_ADMIN)'
+  }
+  if (role === 'STAFF') {
+    return 'พนักงาน (STAFF)'
+  }
+
+  return 'ผู้ใช้งานระบบ'
+})
 
 // Shared state for the drawer
 const isMobileSidebarOpen = useState('mobileSidebarOpen', () => false)
@@ -154,6 +228,34 @@ const isMobileSidebarOpen = useState('mobileSidebarOpen', () => false)
 watch(() => route.fullPath, () => {
   isMobileSidebarOpen.value = false
 })
+
+const openLogoutModal = () => {
+  logoutModalRef.value?.open()
+}
+
+const closeLogoutModal = () => {
+  logoutModalRef.value?.close()
+}
+
+const handleLogout = async () => {
+  try {
+    await refreshShiftState()
+  } catch {
+    showToast('ตรวจสอบสถานะกะไม่สำเร็จ กรุณาลองใหม่', 'error')
+    return
+  }
+
+  if (isShiftOpen.value) {
+    closeLogoutModal()
+    showToast('ยังออกจากระบบไม่ได้ เนื่องจากกะยังเปิดอยู่ กรุณาปิดกะก่อน', 'warning')
+    return
+  }
+
+  closeLogoutModal()
+  clearSession()
+  isMobileSidebarOpen.value = false
+  await navigateTo('/login')
+}
 </script>
 
 <style scoped>

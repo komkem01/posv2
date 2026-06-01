@@ -229,6 +229,8 @@
               </span>
             </div>
 
+            <p v-if="item.note" class="text-[10px] font-semibold text-slate-500">หมายเหตุ: {{ item.note }}</p>
+
             <div class="flex items-center justify-between mt-1 pt-2 border-t border-slate-100/70">
               <!-- Quantity controls -->
               <div class="flex items-center gap-2">
@@ -295,15 +297,15 @@
       <div class="mt-6 border-t border-slate-100 pt-4 space-y-4 flex-shrink-0">
         <div class="space-y-2">
           <div class="flex justify-between text-xs text-slate-500">
-            <span>ยอดรวมสินค้า</span>
+            <span>ยอดรวมก่อนภาษี</span>
             <span
               >฿{{
-                subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })
+                subtotalExVat.toLocaleString(undefined, { minimumFractionDigits: 2 })
               }}</span
             >
           </div>
           <div class="flex justify-between text-xs text-slate-500">
-            <span>ภาษีมูลค่าเพิ่ม (7%)</span>
+            <span>ภาษีมูลค่าเพิ่ม (VAT {{ vatRateLabel }}%)</span>
             <span
               >฿{{
                 vat.toLocaleString(undefined, { minimumFractionDigits: 2 })
@@ -324,12 +326,13 @@
 
         <button
           @click="checkout"
-          :disabled="cart.length === 0"
+          :disabled="cart.length === 0 || !isShiftOpen"
           class="w-full inline-flex items-center justify-center px-6 py-3.5 border border-transparent text-sm font-bold rounded-2xl text-white bg-blue-600 hover:bg-blue-750 active:bg-blue-800 transition-all duration-200 transform active:scale-[0.98] shadow-sm shadow-blue-500/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
         >
-          ยืนยันรายการสั่งซื้อ (ชำระเงิน ฿{{
+          {{ isShiftOpen ? 'ยืนยันรายการสั่งซื้อ' : 'กรุณาเปิดกะก่อนเริ่มขาย' }}
+          <span v-if="isShiftOpen">(ชำระเงิน ฿{{
             total.toLocaleString(undefined, { maximumFractionDigits: 2 })
-          }})
+          }})</span>
         </button>
       </div>
     </div>
@@ -338,13 +341,17 @@
     <Transition name="fade">
       <div v-if="showPaymentModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
         <!-- Backdrop -->
-        <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="showPaymentModal = false"></div>
+        <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="closePaymentModal"></div>
 
         <!-- Modal Card -->
         <div class="relative bg-white border border-slate-200 rounded-3xl max-w-md w-full shadow-xl flex flex-col overflow-hidden">
           <div class="p-5 sm:p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
             <h3 class="text-lg font-extrabold text-slate-800">เลือกช่องทางชำระเงิน</h3>
-            <button @click="showPaymentModal = false" class="text-slate-400 hover:text-slate-600 transition-colors">
+            <button
+              @click="closePaymentModal"
+              :disabled="isProcessingCheckout"
+              class="text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path>
               </svg>
@@ -422,11 +429,11 @@
           <div class="p-5 sm:p-6 border-t border-slate-100 bg-slate-50/50">
             <button 
               @click="confirmPayment"
-              :disabled="paymentMethod === 'cash' && !isCashPaymentValid"
+              :disabled="(paymentMethod === 'cash' && !isCashPaymentValid) || isProcessingCheckout"
               class="w-full inline-flex items-center justify-center px-6 py-3.5 border border-transparent text-sm font-bold rounded-2xl text-white transition-all duration-200 transform active:scale-[0.98] shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
               :class="paymentMethod === 'promptpay' ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/20'"
             >
-              {{ paymentMethod === 'promptpay' ? 'จำลองการโอนสำเร็จ (ออกใบเสร็จ)' : 'ยืนยันรับเงินสด (ออกใบเสร็จ)' }}
+              {{ isProcessingCheckout ? 'กำลังบันทึกรายการขาย...' : (paymentMethod === 'promptpay' ? 'จำลองการโอนสำเร็จ (ออกใบเสร็จ)' : 'ยืนยันรับเงินสด (ออกใบเสร็จ)') }}
             </button>
           </div>
         </div>
@@ -452,10 +459,10 @@
         <div class="bg-white p-6 sm:p-8 max-w-sm w-full mx-auto shadow-2xl relative print:shadow-none print:max-w-full print:p-4 print:text-black" id="printable-receipt">
           <!-- Header -->
           <div class="text-center border-b-2 border-dashed border-slate-300 print:border-black pb-4 mb-4">
-            <h2 class="text-2xl font-extrabold mb-1">EasyPOS Cafe & Bakery</h2>
-            <p class="text-xs text-slate-500 print:text-black">123 ถนนสุขุมวิท แขวงคลองเตย<br/>เขตคลองเตย กรุงเทพมหานคร 10110</p>
-            <p class="text-xs text-slate-500 print:text-black mt-1">โทร. 02-123-4567</p>
-            <p class="text-xs text-slate-500 print:text-black mt-2 font-mono">Tax ID: 01055xxxxxxxx</p>
+            <h2 class="text-2xl font-extrabold mb-1">{{ receiptStoreName }}</h2>
+            <p class="text-xs text-slate-500 print:text-black whitespace-pre-line">{{ receiptStoreAddress }}</p>
+            <p v-if="hasReceiptHeaderNote" class="text-xs text-slate-500 print:text-black mt-1 whitespace-pre-line">{{ receiptStoreHeaderNote }}</p>
+            <p class="text-xs text-slate-500 print:text-black mt-2 font-mono">Tax ID: {{ receiptStoreTaxId }}</p>
           </div>
 
           <!-- Info -->
@@ -484,17 +491,20 @@
                   <span>{{ addon.price > 0 ? addon.price.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '' }}</span>
                 </div>
               </div>
+              <div v-if="item.note" class="pl-4 text-slate-500 print:text-black mt-0.5 text-[10px]">
+                <span>* หมายเหตุ: {{ item.note }}</span>
+              </div>
             </div>
           </div>
 
           <!-- Summary -->
           <div class="space-y-1 text-[11px] mb-4">
             <div class="flex justify-between">
-              <span>ยอดรวม (Subtotal)</span>
-              <span>{{ receiptData?.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</span>
+              <span>ยอดรวมก่อนภาษี (Subtotal)</span>
+              <span>{{ (receiptData?.subtotalExVat ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</span>
             </div>
             <div class="flex justify-between">
-              <span>ภาษีมูลค่าเพิ่ม (VAT 7%)</span>
+              <span>ภาษีมูลค่าเพิ่ม (VAT {{ (receiptData?.vatRate ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 }) }}%)</span>
               <span>{{ receiptData?.vat.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</span>
             </div>
             <div class="flex justify-between font-extrabold text-sm pt-2">
@@ -599,6 +609,17 @@
           </div>
         </div>
 
+        <div class="space-y-1">
+          <label class="text-[11px] font-bold text-slate-500">หมายเหตุเพิ่มเติม</label>
+          <textarea
+            v-model="tempItemNote"
+            rows="2"
+            maxlength="500"
+            placeholder="เช่น หวานน้อยมาก / ไม่ใส่น้ำแข็ง"
+            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 placeholder:text-slate-400 focus:border-blue-300 focus:bg-white focus:outline-none"
+          ></textarea>
+        </div>
+
         <!-- Footer/Action buttons -->
         <div class="flex gap-2.5 pt-3 border-t border-slate-100">
           <button
@@ -624,8 +645,14 @@ import { ref, computed, onMounted } from "vue";
 import { useToast } from "~/composables/useToast"
 
 const { showToast } = useToast()
-const { get, patch, post } = useApi()
+const { get, post } = useApi()
 const { auth } = useAuth()
+const {
+  shiftState,
+  isShiftOpen,
+  refreshShiftState,
+  addShiftSale,
+} = useShiftState()
 
 definePageMeta({
   middleware: ["auth"],
@@ -633,6 +660,8 @@ definePageMeta({
 
 interface Product {
   id: string;
+  sku: string;
+  costPrice: number;
   name: string;
   price: number;
   category: string;
@@ -641,6 +670,7 @@ interface Product {
 
 interface Addon {
   id: string;
+  addonId: string;
   name: string;
   price: number;
   productId: string | null;
@@ -656,10 +686,23 @@ interface CartItem {
   product: Product;
   quantity: number;
   selectedAddons?: Addon[];
+  note?: string;
 }
 
-// Stock records for updating after checkout
-const stockRecords = ref(new Map<string, { id: string; branchId: string }>())
+interface BranchReceiptInfo {
+  store_name?: string;
+  name?: string;
+  tax_id?: string | null;
+  address?: string;
+  sub_district_name?: string;
+  district_name?: string;
+  province_name?: string;
+  zipcode_name?: string;
+  receipt_header_note?: string | null;
+  vat_enabled?: boolean;
+  vat_rate?: number;
+  price_includes_vat?: boolean;
+}
 
 // Categories list loaded from API
 const rawCategoryNames = ref<string[]>([])
@@ -672,9 +715,43 @@ const showPaymentModal = ref(false);
 const paymentMethod = ref<'cash' | 'promptpay'>('cash');
 const receivedAmount = ref<string>('');
 const displayReceivedAmount = ref<string>('');
+const isProcessingCheckout = ref(false);
 
 const showReceiptModal = ref(false);
 const receiptData = ref<any>(null);
+const receiptStore = ref({
+  name: "EasyPOS Cafe & Bakery",
+  address: "-",
+  taxId: "-",
+  headerNote: "",
+});
+
+const taxSettings = ref({
+  vatEnabled: true,
+  vatRate: 7,
+  priceIncludesVat: false,
+})
+
+const receiptStoreName = computed(() => receiptStore.value.name || "-");
+const receiptStoreAddress = computed(() => receiptStore.value.address || "-");
+const receiptStoreTaxId = computed(() => receiptStore.value.taxId || "-");
+const receiptStoreHeaderNote = computed(() => receiptStore.value.headerNote || "");
+const hasReceiptHeaderNote = computed(() => receiptStoreHeaderNote.value.trim().length > 0);
+const vatRateLabel = computed(() => taxSettings.value.vatRate.toLocaleString(undefined, { maximumFractionDigits: 2 }))
+
+const formatBranchAddress = (branch: BranchReceiptInfo) => {
+  const parts = [
+    branch.address,
+    branch.sub_district_name,
+    branch.district_name,
+    branch.province_name,
+    branch.zipcode_name,
+  ]
+    .map((v) => (v || "").trim())
+    .filter((v) => v.length > 0);
+
+  return parts.join(" ");
+};
 
 // Products loaded from API
 const products = ref<Product[]>([])
@@ -684,9 +761,15 @@ const addons = ref<Addon[]>([])
 
 onMounted(async () => {
   try {
+    await refreshShiftState()
+  } catch {
+    showToast('โหลดสถานะกะไม่สำเร็จ', 'error')
+  }
+
+  try {
     const [catRes, prodRes, stockRes, addonRes, paRes] = await Promise.all([
       get<{ id: string; name: string }[]>('/api/v1/store/category', { size: 1000 }),
-      get<{ id: string; name: string; price: number; category_name: string | null }[]>('/api/v1/store/product', { size: 1000 }),
+      get<{ id: string; sku: string; name: string; price: number; cost_price: number; category_name: string | null }[]>('/api/v1/store/product', { size: 1000 }),
       get<{ id: string; product_id: string; branch_id: string; stock: number }[]>('/api/v1/store/product-stock', { size: 1000 }),
       get<{ id: string; name: string; price: number; is_all_products: boolean; is_active: boolean }[]>('/api/v1/store/addon', { size: 1000 }),
       get<{ addon_id: string; product_id: string }[]>('/api/v1/store/product-addon', { size: 1000 }),
@@ -695,17 +778,16 @@ onMounted(async () => {
     rawCategoryNames.value = (catRes.data ?? []).map(c => c.name)
 
     const stockMap = new Map<string, number>()
-    const stockRecMap = new Map<string, { id: string; branchId: string }>()
     for (const s of stockRes.data ?? []) {
       if (!stockMap.has(s.product_id)) {
         stockMap.set(s.product_id, s.stock)
-        stockRecMap.set(s.product_id, { id: s.id, branchId: s.branch_id })
       }
     }
-    stockRecords.value = stockRecMap
 
     products.value = (prodRes.data ?? []).map(p => ({
       id: p.id,
+      sku: p.sku,
+      costPrice: p.cost_price,
       name: p.name,
       price: p.price,
       category: p.category_name ?? '',
@@ -723,18 +805,42 @@ onMounted(async () => {
     for (const a of addonRes.data ?? []) {
       if (!a.is_active) continue
       if (a.is_all_products) {
-        loadedAddons.push({ id: a.id, name: a.name, price: a.price, productId: null })
+        loadedAddons.push({ id: a.id, addonId: a.id, name: a.name, price: a.price, productId: null })
         continue
       }
       const pIds = paMap.get(a.id)
       if (!pIds || pIds.size === 0) continue
       for (const pid of pIds) {
-        loadedAddons.push({ id: `${a.id}_${pid}`, name: a.name, price: a.price, productId: pid })
+        loadedAddons.push({ id: `${a.id}_${pid}`, addonId: a.id, name: a.name, price: a.price, productId: pid })
       }
     }
     addons.value = loadedAddons
   } catch {
     showToast('โหลดข้อมูลไม่สำเร็จ กรุณารีเฟรชหน้า', 'error')
+  }
+
+  const branchId = auth.value.user?.branchId
+  if (!branchId) return
+
+  try {
+    const branchRes = await get<BranchReceiptInfo>(`/api/v1/store/branch/${branchId}`)
+    const branch = branchRes.data
+    if (!branch) return
+
+    receiptStore.value = {
+      name: (branch.store_name || branch.name || '').trim() || 'EasyPOS Cafe & Bakery',
+      address: formatBranchAddress(branch) || '-',
+      taxId: (branch.tax_id || '').trim() || '-',
+      headerNote: (branch.receipt_header_note || '').trim(),
+    }
+
+    taxSettings.value = {
+      vatEnabled: branch.vat_enabled ?? true,
+      vatRate: Number(branch.vat_rate || 7),
+      priceIncludesVat: branch.price_includes_vat ?? false,
+    }
+  } catch {
+    // Keep fallback receipt header values when branch metadata cannot be loaded.
   }
 })
 
@@ -742,6 +848,7 @@ onMounted(async () => {
 const showAddonModal = ref(false);
 const activeProduct = ref<Product | null>(null);
 const tempSelectedAddons = ref<Addon[]>([]);
+const tempItemNote = ref('');
 const activeAddonSection = ref('sweetness');
 
 const availableAddonsForActiveProduct = computed(() => {
@@ -775,11 +882,15 @@ const addonSectionsForActiveProduct = computed<AddonSection[]>(() => {
   };
 
   for (const addon of availableAddonsForActiveProduct.value) {
-    grouped[getAddonSectionKey(addon.name)].push(addon);
+    const sectionKey = getAddonSectionKey(addon.name);
+    if (!grouped[sectionKey]) {
+      grouped[sectionKey] = [];
+    }
+    grouped[sectionKey]!.push(addon);
   }
 
   return Object.keys(grouped)
-    .map((key) => ({ key, title: addonSectionTitles[key] || 'อื่นๆ', items: grouped[key] }))
+    .map((key) => ({ key, title: addonSectionTitles[key] || 'อื่นๆ', items: grouped[key] || [] }))
     .filter((section) => section.items.length > 0);
 });
 
@@ -787,20 +898,32 @@ const activeAddonSectionItems = computed(() => {
   const sections = addonSectionsForActiveProduct.value;
   if (sections.length === 0) return [];
   const target = sections.find((section) => section.key === activeAddonSection.value);
-  return target ? target.items : sections[0].items;
+  return target ? target.items : sections[0]?.items || [];
 });
 
-const openAddonModal = (product: Product) => {
+const openAddonModal = async (product: Product) => {
+  try {
+    await refreshShiftState()
+  } catch {
+    showToast('โหลดสถานะกะไม่สำเร็จ', 'error')
+  }
+
+  if (!isShiftOpen.value) {
+    showToast('ยังไม่เปิดกะ กรุณาเปิดกะจากหน้าจัดการหลังบ้าน', 'error')
+    return
+  }
+
   if (product.stock <= 0) return;
   activeProduct.value = product;
   tempSelectedAddons.value = [];
+  tempItemNote.value = '';
   
   // Find applicable addons
   const applicable = addons.value.filter(
     (addon) => addon.productId === null || addon.productId === product.id
   );
   if (applicable.length === 0) {
-    addToCart(product, []);
+    addToCart(product, [], '');
   } else {
     const sections = addonSectionsForActiveProduct.value;
     activeAddonSection.value = sections[0]?.key || 'sweetness';
@@ -809,10 +932,14 @@ const openAddonModal = (product: Product) => {
 };
 
 const toggleAddonSelection = (addon: Addon) => {
+  const sectionKey = getAddonSectionKey(addon.name)
   const idx = tempSelectedAddons.value.findIndex(a => a.id === addon.id);
   if (idx > -1) {
     tempSelectedAddons.value.splice(idx, 1);
   } else {
+    if (sectionKey === 'sweetness') {
+      tempSelectedAddons.value = tempSelectedAddons.value.filter((selected) => getAddonSectionKey(selected.name) !== 'sweetness')
+    }
     tempSelectedAddons.value.push(addon);
   }
 };
@@ -823,10 +950,11 @@ const isAddonSelected = (addon: Addon) => {
 
 const confirmAddonSelection = () => {
   if (activeProduct.value) {
-    addToCart(activeProduct.value, tempSelectedAddons.value);
+    addToCart(activeProduct.value, tempSelectedAddons.value, tempItemNote.value);
     showAddonModal.value = false;
     activeProduct.value = null;
     tempSelectedAddons.value = [];
+    tempItemNote.value = '';
   }
 };
 
@@ -866,12 +994,45 @@ const subtotal = computed(() => {
   );
 });
 
+const subtotalExVat = computed(() => {
+  if (!taxSettings.value.vatEnabled) {
+    return subtotal.value
+  }
+
+  if (!taxSettings.value.priceIncludesVat) {
+    return subtotal.value
+  }
+
+  const rate = Math.max(0, taxSettings.value.vatRate)
+  if (rate === 0) {
+    return subtotal.value
+  }
+
+  return subtotal.value * (100 / (100 + rate))
+})
+
 const vat = computed(() => {
-  return subtotal.value * 0.07;
+  if (!taxSettings.value.vatEnabled) {
+    return 0
+  }
+
+  if (taxSettings.value.priceIncludesVat) {
+    return subtotal.value - subtotalExVat.value
+  }
+
+  return subtotal.value - subtotalExVat.value
 });
 
 const total = computed(() => {
-  return subtotal.value + vat.value;
+  if (!taxSettings.value.vatEnabled) {
+    return subtotal.value
+  }
+
+  if (taxSettings.value.priceIncludesVat) {
+    return subtotal.value
+  }
+
+  return subtotalExVat.value + vat.value
 });
 
 // Helper comparison for addons
@@ -883,13 +1044,16 @@ const areAddonsEqual = (a: Addon[], b: Addon[]) => {
 };
 
 // Cart Actions
-const addToCart = (product: Product, selectedAddonsList: Addon[] = []) => {
+const addToCart = (product: Product, selectedAddonsList: Addon[] = [], noteText = '') => {
   if (product.stock <= 0) return;
+
+  const normalizedNote = noteText.trim()
 
   const existingItem = cart.value.find(
     (item) => 
       item.product.id === product.id && 
-      areAddonsEqual(item.selectedAddons || [], selectedAddonsList)
+      areAddonsEqual(item.selectedAddons || [], selectedAddonsList) &&
+      (item.note || '') === normalizedNote
   );
   if (existingItem) {
     if (existingItem.quantity < product.stock) {
@@ -897,7 +1061,7 @@ const addToCart = (product: Product, selectedAddonsList: Addon[] = []) => {
       showToast(`เพิ่มจำนวน "${product.name}" เป็น ${existingItem.quantity} ชิ้น`, "info")
     }
   } else {
-    cart.value.push({ product, quantity: 1, selectedAddons: [...selectedAddonsList] });
+    cart.value.push({ product, quantity: 1, selectedAddons: [...selectedAddonsList], note: normalizedNote || undefined });
     showToast(`เพิ่ม "${product.name}" ลงตะกร้าแล้ว`, "success")
   }
 };
@@ -937,7 +1101,18 @@ const isCashPaymentValid = computed(() => {
 });
 
 // Checkout simulation
-const checkout = () => {
+const checkout = async () => {
+  try {
+    await refreshShiftState()
+  } catch {
+    showToast('โหลดสถานะกะไม่สำเร็จ', 'error')
+  }
+
+  if (!isShiftOpen.value) {
+    showToast('ยังไม่เปิดกะ กรุณาเปิดกะจากหน้าจัดการหลังบ้าน', 'error')
+    return
+  }
+
   if (cart.value.length === 0) return;
   // Open payment modal
   paymentMethod.value = 'cash';
@@ -975,68 +1150,152 @@ const setQuickAmount = (amt: number) => {
   formatReceivedAmount();
 };
 
+const closePaymentModal = () => {
+  if (isProcessingCheckout.value) return;
+  showPaymentModal.value = false;
+};
+
+const generateOrderNo = () => {
+  const now = new Date();
+  const datePart = now.toISOString().slice(2, 10).replace(/-/g, '');
+  const rand = Math.floor(1000 + Math.random() * 9000);
+  return `POS-${datePart}-${rand}`;
+};
+
+const checkoutBackendMessageTH: Record<string, string> = {
+  "sale-checkout-failed": "บันทึกรายการขายไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+  "order-shift-not-open": "ไม่สามารถขายได้ เนื่องจากกะไม่ได้อยู่ในสถานะเปิด",
+  "order-cashier-branch-mismatch": "ไม่สามารถขายได้ เนื่องจากข้อมูลสาขาแคชเชียร์ไม่ตรงกับกะ",
+  "bad-request": "ข้อมูลคำขอไม่ถูกต้อง กรุณาตรวจสอบรายการอีกครั้ง",
+};
+
+const resolveCheckoutErrorMessage = (error: any) => {
+  const backendMessage = String(error?.data?.message || "").trim().toLowerCase();
+  if (backendMessage && checkoutBackendMessageTH[backendMessage]) {
+    return checkoutBackendMessageTH[backendMessage];
+  }
+
+  if (backendMessage && !checkoutBackendMessageTH[backendMessage]) {
+    return error?.data?.message;
+  }
+
+  return "บันทึกรายการขายลงฐานข้อมูลไม่สำเร็จ";
+};
+
+const persistSaleToDatabase = async (orderNo: string, finalReceived: number) => {
+  const branchId = auth.value.user?.branchId;
+  const cashierId = auth.value.user?.id;
+  const shiftId = shiftState.value.id;
+
+  if (!branchId || !cashierId || !shiftId) {
+    throw new Error('missing sale context');
+  }
+
+  const checkoutRes = await post<{ order_id: string; order_no: string }>("/api/v1/store/sale/checkout", {
+    branch_id: branchId,
+    shift_id: shiftId,
+    cashier_id: cashierId,
+    order_no: orderNo,
+    status: "COMPLETED",
+    total_before_discount: subtotalExVat.value,
+    discount_amount: 0,
+    subtotal_amount: subtotalExVat.value,
+    vat_rate: taxSettings.value.vatEnabled ? taxSettings.value.vatRate : 0,
+    vat_amount: vat.value,
+    net_amount: total.value,
+    received_amount: finalReceived,
+    change_amount: paymentMethod.value === 'cash' ? finalReceived - total.value : 0,
+    payment_method: paymentMethod.value === 'cash' ? 'CASH' : 'PROMPTPAY',
+    payment_amount: total.value,
+    transaction_no: paymentMethod.value === 'promptpay' ? orderNo : '',
+    items: cart.value.map(item => ({
+      product_id: item.product.id,
+      sku: item.product.sku,
+      name: item.product.name,
+      note: item.note || '',
+      quantity: item.quantity,
+      unit_price: item.product.price,
+      cost_price: item.product.costPrice,
+      discount_amount: 0,
+      net_amount: getCartLineTotal(item),
+      addons: (item.selectedAddons || []).map(addon => ({
+        addon_id: addon.addonId,
+        name: addon.name,
+        price_at_sale: addon.price,
+      })),
+    })),
+  });
+
+  if (!checkoutRes.data?.order_id) {
+    throw new Error('sale checkout failed');
+  }
+
+  return {
+    orderId: checkoutRes.data.order_id,
+    orderNo: checkoutRes.data.order_no || orderNo,
+  };
+};
+
 // Confirm payment and generate receipt
 const confirmPayment = async () => {
+  if (isProcessingCheckout.value) return;
   if (paymentMethod.value === 'cash' && !isCashPaymentValid.value) return;
 
+  isProcessingCheckout.value = true;
+
   const finalReceived = paymentMethod.value === 'cash' ? (parseFloat(receivedAmount.value) || total.value) : total.value;
-  
-  // Save receipt snapshot
-  receiptData.value = {
-    date: new Date(),
-    orderNo: 'ORD' + Math.floor(10000 + Math.random() * 90000), // Random 5-digit order no
-    items: JSON.parse(JSON.stringify(cart.value)), // Deep clone cart
-    subtotal: subtotal.value,
-    vat: vat.value,
-    total: total.value,
-    paymentMethod: paymentMethod.value,
-    receivedAmount: finalReceived,
-    changeAmount: paymentMethod.value === 'cash' ? finalReceived - total.value : 0,
-  };
+  const orderNo = generateOrderNo();
 
   try {
-    // Deduct stock from backend and keep local list in sync
+    try {
+      await refreshShiftState();
+    } catch {
+      showToast('โหลดสถานะกะไม่สำเร็จ', 'error');
+      return;
+    }
+
+    if (!isShiftOpen.value) {
+      showToast('ยังไม่เปิดกะ กรุณาเปิดกะจากหน้าจัดการหลังบ้าน', 'error');
+      return;
+    }
+
+    const persisted = await persistSaleToDatabase(orderNo, finalReceived);
+
+    receiptData.value = {
+      date: new Date(),
+      orderNo: persisted.orderNo,
+      items: JSON.parse(JSON.stringify(cart.value)),
+      subtotal: subtotal.value,
+      subtotalExVat: subtotalExVat.value,
+      vatRate: taxSettings.value.vatEnabled ? taxSettings.value.vatRate : 0,
+      vat: vat.value,
+      total: total.value,
+      paymentMethod: paymentMethod.value,
+      receivedAmount: finalReceived,
+      changeAmount: paymentMethod.value === 'cash' ? finalReceived - total.value : 0,
+    };
+
     for (const item of cart.value) {
       const prod = products.value.find((p) => p.id === item.product.id);
       if (!prod) continue;
-
-      const newStock = Math.max(0, prod.stock - item.quantity);
-      const stockRecord = stockRecords.value.get(prod.id);
-
-      if (stockRecord) {
-        await patch(`/api/v1/store/product-stock/${stockRecord.id}`, {
-          product_id: prod.id,
-          branch_id: stockRecord.branchId,
-          stock: newStock,
-        });
-      } else {
-        const branchId = auth.value.user?.branchId;
-        if (!branchId) {
-          showToast('ไม่พบข้อมูลสาขา ไม่สามารถตัดสต็อกได้', 'error')
-          return
-        }
-        const created = await post<{ id: string; branch_id: string }>('/api/v1/store/product-stock', {
-          product_id: prod.id,
-          branch_id: branchId,
-          stock: newStock,
-        });
-        if (created.data) {
-          stockRecords.value.set(prod.id, { id: created.data.id, branchId: created.data.branch_id || branchId });
-        }
-      }
-
-      prod.stock = newStock;
+      prod.stock = Math.max(0, prod.stock - item.quantity);
     }
-  } catch (e: any) {
-    showToast(e?.data?.message || 'ตัดสต็อกไม่สำเร็จ', 'error')
-    return
-  }
+    showToast("ชำระเงินสำเร็จและบันทึกลงฐานข้อมูลแล้ว", "success")
 
-  showToast("ชำระเงินสำเร็จ เตรียมพิมพ์ใบเสร็จ", "success")
-  
-  showPaymentModal.value = false;
-  showReceiptModal.value = true;
-  cart.value = []; // clear cart
+    try {
+      await addShiftSale(paymentMethod.value, total.value)
+    } catch {
+      showToast('บันทึกยอดกะไม่สำเร็จ แต่รายการขายสำเร็จแล้ว', 'info')
+    }
+
+    showPaymentModal.value = false;
+    showReceiptModal.value = true;
+    cart.value = []; // clear cart
+  } catch (e: any) {
+    showToast(resolveCheckoutErrorMessage(e), 'error');
+  } finally {
+    isProcessingCheckout.value = false;
+  }
 };
 
 const closeReceiptAndNewOrder = () => {
