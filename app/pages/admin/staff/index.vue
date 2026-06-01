@@ -95,7 +95,7 @@
                   {{ staff.is_active ? "ใช้งาน" : "ปิดใช้งาน" }}
                 </span>
               </td>
-              <td class="py-3.5 text-center space-x-2 whitespace-nowrap">
+              <td class="py-3.5 text-start space-x-2 whitespace-nowrap">
                 <button
                   v-if="canUpdateStaff(staff)"
                   @click="startEditStaff(staff)"

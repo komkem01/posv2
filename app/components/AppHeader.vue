@@ -23,7 +23,7 @@
             <NuxtLink 
               to="/pos" 
               class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5"
-              :class="$route.path === '/pos' 
+              :class="$route.path.startsWith('/pos') 
                 ? 'bg-white text-blue-600 shadow-sm border border-slate-200/40' 
                 : 'text-slate-500 hover:text-slate-800'"
             >
@@ -35,7 +35,7 @@
             <NuxtLink 
               to="/admin" 
               class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5"
-              :class="$route.path === '/admin' 
+              :class="$route.path.startsWith('/admin') 
                 ? 'bg-white text-blue-600 shadow-sm border border-slate-200/40' 
                 : 'text-slate-500 hover:text-slate-800'"
             >

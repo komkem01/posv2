@@ -6,9 +6,9 @@
       </div>
       <div class="flex items-center gap-6 text-xs text-slate-400 font-medium">
         <template v-if="auth.isLoggedIn">
-          <NuxtLink to="/pos" class="hover:text-blue-600 transition-colors">ขายหน้าบ้าน (POS)</NuxtLink>
-          <NuxtLink to="/admin" class="hover:text-blue-600 transition-colors">จัดการหลังบ้าน</NuxtLink>
-          <NuxtLink to="/logout" class="hover:text-rose-600 transition-colors">ออกจากระบบ (Logout)</NuxtLink>
+          <!-- <NuxtLink to="/pos" class="hover:text-blue-600 transition-colors">ขายหน้าบ้าน (POS)</NuxtLink> -->
+          <!-- <NuxtLink to="/admin" class="hover:text-blue-600 transition-colors">จัดการหลังบ้าน</NuxtLink> -->
+          <!-- <NuxtLink to="/logout" class="hover:text-rose-600 transition-colors">ออกจากระบบ (Logout)</NuxtLink> -->
         </template>
         <template v-else>
           <NuxtLink to="/login" class="hover:text-blue-600 transition-colors">เข้าสู่ระบบ (Sign In)</NuxtLink>

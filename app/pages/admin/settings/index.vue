@@ -35,7 +35,7 @@
                   {{ getAddonProductLabel(add) }}
                 </span>
               </td>
-              <td class="py-3.5 text-right pr-6 font-mono font-bold text-slate-700 text-sm whitespace-nowrap">
+              <td class="py-3.5 text-end pr-6 font-mono font-bold text-slate-700 text-sm whitespace-nowrap">
                 +฿{{ add.price.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}
               </td>
               <td class="py-3.5 text-center space-x-2 whitespace-nowrap">
